@@ -15,6 +15,7 @@ a config-driven toolkit and a small API that an orchestrator drives.
 | `api/mock_runner.py` | Stand-in for the Claude run; walks the stages without spending anything. |
 | `prompts/produce.md` | Instructions for the Claude Code run that produces a video. |
 | `examples/demo/` | A script that uses every template, with stand-in art (`tests/make_demo_art.py`), buildable offline. |
+| `api/task.py`, `docs/ECS_STEP_FUNCTIONS.md`, `deploy/ecs-task-definition.json` | Running on ECS Fargate from a Step Functions state machine: one task per run of the Claude session, job folders on EFS. |
 | `Dockerfile`, `deploy/`, `buildspec.yml` | Image, supervisord, compose, systemd units, first-boot setup, `.env` from Parameter Store, dead-man stop, CodeBuild with a render smoke test. |
 
 ## How a video is made

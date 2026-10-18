@@ -123,7 +123,7 @@ def emit(j, event, bump=True):
 def hook_worker():
     while True:
         url, body, attempt, due = HOOKS.get()
-        if due > time.time(): HOOKS.put((url, body, attempt, due)); time.sleep(0.5); continue
+        if due > time.time(): HOOKS.put((url, body, attempt, due)); HOOKS.task_done(); time.sleep(0.5); continue
         raw = json.dumps(body).encode()
         hdr = {"Content-Type": "application/json", "X-Infogen-Event": body["event"], "X-Infogen-Delivery": str(uuid.uuid4()),
                "X-Infogen-Signature": "sha256=" + hmac.new(SECRET.encode(), raw, hashlib.sha256).hexdigest()}
@@ -131,6 +131,7 @@ def hook_worker():
             r = urllib.request.urlopen(urllib.request.Request(url, raw, hdr), timeout=10); ok = 200 <= r.status < 300
         except Exception: ok = False
         if not ok and body["event"] != "job.heartbeat" and attempt < len(RETRY): HOOKS.put((url, body, attempt + 1, time.time() + RETRY[attempt]))
+        HOOKS.task_done()   # api/task.py waits on HOOKS.join() for delivery (retries included) before the ECS task exits
 threading.Thread(target=hook_worker, daemon=True).start()
 
 # ---------- runner ----------

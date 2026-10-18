@@ -1,0 +1,111 @@
+"""One run of a job as an ECS task, for a Step Functions state machine (ecs:runTask.waitForTaskToken). Replaces the API server
+on ECS: each task starts the Claude run or resumes it after a checkpoint, follows it to the end of that run, and reports back.
+python3 -m api.task
+
+Env (set as container overrides by the state machine, like the other StoryStudio ECS tasks):
+  PAYLOAD_JSON         start:  {"request": <the request, same body as POST /v1/infographics>}
+                       resume: {"job_id": "<from the previous task's output>", "response": {"checkpoint_id", "action": "approve"|"revise"|"abort", "instructions"}}
+  INFOGEN_TASK_TOKEN   the Step Functions task token ($$.Task.Token); without it the result is only printed (local tests)
+Plus everything the server reads (INFOGEN_RUNS_DIR on the shared EFS volume, INFOGEN_CALLBACK_SECRET, API keys, ...).
+
+Task output (SendTaskSuccess): the status object of GET /v1/infographics/{id}. Its `state` is `awaiting_input` (with `awaiting`),
+`succeeded` or `cancelled`. A failed job ends with SendTaskFailure: error = the error code, cause = the error object as JSON.
+Signed webhooks are sent exactly as by the server; the task waits for their delivery (with retries) before it exits."""
+import fcntl, json, os, re, sys, threading, time, uuid
+from contextlib import contextmanager
+
+os.environ.setdefault("INFOGEN_API_TOKEN", "unused-in-task-mode")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from api import server as V
+from infogen import status as S
+
+TOKEN = os.environ.get("INFOGEN_TASK_TOKEN", "")
+try: PAYLOAD = json.loads(os.environ.get("PAYLOAD_JSON") or "{}")
+except ValueError: PAYLOAD = {"invalid": True}
+HOOK_DRAIN_S = float(os.environ.get("INFOGEN_HOOK_DRAIN_S", "600"))
+
+def sfn():
+    import boto3
+    return boto3.client("stepfunctions", region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
+
+def report(ok, out):
+    print(json.dumps({"ok": ok, "result": out}), flush=True)
+    if not TOKEN: return
+    if ok: sfn().send_task_success(taskToken=TOKEN, output=json.dumps(out))
+    else:
+        err = out.get("error") or {}
+        sfn().send_task_failure(taskToken=TOKEN, error=str(err.get("code", "internal"))[:256], cause=json.dumps(out)[:32000])
+
+def heartbeat(stop):
+    """Lets the state machine use HeartbeatSeconds, so a task that dies without reporting (out of memory, stopped) is noticed."""
+    while TOKEN and not stop.wait(V.HEARTBEAT):
+        try: sfn().send_task_heartbeat(taskToken=TOKEN)
+        except Exception as e: print("heartbeat failed:", e, flush=True)
+
+@contextmanager
+def index_lock():
+    """index.json is shared by every task on the volume; tasks can run in parallel."""
+    with open(os.path.join(V.RUNS, ".index.lock"), "w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try: yield
+        finally: fcntl.flock(f, fcntl.LOCK_UN)
+
+def fail_early(code, message, job=None):
+    report(False, {"job_id": job, "state": "failed", "error": {"code": code, "stage": "setup", "message": message, "retryable": False}})
+    sys.exit(1)
+
+def start():
+    try: req = V.Req(**PAYLOAD["request"])
+    except Exception as e: fail_early("invalid_request", str(e)[:2000])
+    c = V.checks()
+    if not V.ready(c, need_ltx=req.visuals.ltx_clips > 0): fail_early("not_ready", json.dumps(c))
+    with index_lock():
+        idx = V.index()
+        if req.request_id in idx: fail_early("duplicate_request", f"request_id {req.request_id} already has job {idx[req.request_id]}", idx[req.request_id])
+        j = "ig_" + uuid.uuid4().hex[:12]; os.makedirs(V.jdir(j))
+        idx[req.request_id] = j; V.jwrite("", "index.json", idx)
+    r = req.model_dump(); r["output"]["prefix"] = r["output"]["prefix"] or f"infogen/{req.request_id}/"
+    V.jwrite(j, "request.json", r)
+    V.jwrite(j, "style.json", {"preset": r["visuals"]["style"], "palette": r["visuals"]["palette"], "cast": r["visuals"]["cast"]})
+    V.jwrite(j, "job.json", {"job_id": j, "request_id": req.request_id, "request": r, "created_at": S.now(), "deadline": time.time() + req.limits.max_runtime_minutes * 60})
+    V.jwrite(j, "state.json", {"state": "running", "seq": 0})
+    S.update(os.path.join(V.jdir(j), "status.json"), stage="setup", message="Job accepted.")
+    V.emit(j, "job.accepted")
+    V.spawn(j, V.start_prompt(r))
+    return j
+
+def resume():
+    j = str(PAYLOAD.get("job_id", ""))
+    if not re.fullmatch(r"ig_[0-9a-f]{12}", j) or not os.path.isdir(V.jdir(j)): fail_early("not_found", f"no job {j!r}", j or None)
+    try: r = V.Respond(**PAYLOAD["response"])
+    except Exception as e: fail_early("invalid_request", str(e)[:2000], j)
+    st = V.jread(j, "state.json", {}); a = S.read(os.path.join(V.jdir(j), "status.json"))
+    if st.get("state") != "awaiting_input": fail_early("not_awaiting_input", f"job is {st.get('state')}", j)
+    cp = (a.get("awaiting") or {}).get("checkpoint_id")
+    if r.checkpoint_id != cp: fail_early("wrong_checkpoint", f"expected {cp}", j)
+    if r.action == "abort": V.finish(j, "cancelled"); return j, False
+    # The runtime limit counts from this run, not from job creation: the reviewer's time at the checkpoint is not the job's.
+    job = V.jread(j, "job.json"); job["deadline"] = time.time() + job["request"]["limits"]["max_runtime_minutes"] * 60; V.jwrite(j, "job.json", job)
+    V.jwrite(j, f"response_{cp}.json", r.model_dump())
+    S.update(os.path.join(V.jdir(j), "status.json"), state="running", message=f"Checkpoint {cp}: {r.action}.")
+    text = (f"The reviewer answered checkpoint {cp}: {r.action.upper()}." + (f" Their instructions: {r.instructions}" if r.instructions else "") +
+            " The answer is also in response_" + cp + ".json. " + ("Continue with the next stage." if r.action == "approve" else "Apply the changes, then raise the same checkpoint again."))
+    V.spawn(j, text, resume=True); V.emit(j, "status.updated")
+    return j, True
+
+def drain_hooks():
+    t = threading.Thread(target=V.HOOKS.join, daemon=True); t.start(); t.join(HOOK_DRAIN_S)
+    if t.is_alive(): print("webhooks still undelivered after", HOOK_DRAIN_S, "s", flush=True)
+
+def main():
+    stop = threading.Event(); threading.Thread(target=heartbeat, args=(stop,), daemon=True).start()
+    if "request" not in PAYLOAD and "job_id" not in PAYLOAD: fail_early("invalid_request", "PAYLOAD_JSON needs a request (start) or a job_id and response (resume)")
+    j, running = (start(), True) if "request" in PAYLOAD else resume()
+    if running: V.watch(j)
+    drain_hooks(); stop.set()
+    out = V.public(j); ok = out["state"] != "failed"
+    report(ok, out)
+    sys.exit(0 if ok else 1)
+
+if __name__ == "__main__":
+    main()
