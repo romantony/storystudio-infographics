@@ -104,6 +104,22 @@ Budget, from the request:
 
 Prompts describe pictures only, never text, labels or numbers (the templates add those, spelled correctly). Leave out the cut-out `cast` layer on illustration scenes: the characters are already in the frame.
 
+**Animation: simple only.** A few frames come to life with Wan2.2. Give those frames an `animate` block (slots: the docstring of `/app/infogen/animate.py`), and show each one with a scene `{"type": "clip", "clip": "<frame id>"}`.
+- **Pick only the beats that carry the story:** the opening hook, the turning point, the climax, and at most one per chapter.
+- **The cap is hard:** `visuals.animated_max_pct` of the frames, and never more than `visuals.animated_clips`. `validate --plan` rejects a plan over it.
+- **Keep every animation SIMPLE.** Complex animation does not come out as intended:
+  - **One main motion:** one subject, one visible action, a direction and a slow speed. For example "the silver plane flies slowly from left to right high in the sky, staying small".
+  - **At most one small secondary action,** by position: "the pilot on the left waves his raised hand". Leave it out if the main motion tells the beat.
+  - **No sequences** ("then", "after", "until"). No several people doing different things, no fast action, no turning toward the camera, no talking, no new objects appearing.
+  - **Give a moving subject its size and path,** so it doesn't grow or cover the scene: "high in the sky, staying small", "in the middle distance".
+  - **Name what must stay still** (`still`): buildings, ground, furniture.
+  - **Use a static camera** unless the beat needs a slow push-in or a slow pan, and use one camera move at most.
+- **Write each slot as one short sentence about motion.** Don't describe clothes, colours or faces: the frame already shows them.
+- **Move a subject the way it faces.** In the frame `prompt`, say which way a moving subject faces ("the plane faces left, nose on the left"), and have `main` move it that way ("flies slowly from right to left"). A plane told to fly against its facing flies off into the distance instead.
+- **Word a held action as continuous** ("keeps his hand raised and waves it side to side for the whole clip"), or it may stop after a second.
+
+`queue` checks each clip for camera movement and retries once with only the main motion. If the clip still fails, or the cap is used up, the scene shows the still frame. Report the `animation: … clips made, … of … allowed attempts used` line as a warning, and record `--cost wan_clips=<attempts>`.
+
 Run `validate` (with `--assets assets.json --plan plan/visual_plan.json --target-seconds <n>` for the long video, and `--short <id>` for each Short) and fix every error before the checkpoint.
 
 **Assets.**
@@ -111,6 +127,14 @@ Run `validate` (with `--assets assets.json --plan plan/visual_plan.json --target
 2. Run `queue plan/visual_plan.json --only refs`. Every reference is drawn new from the series' style anchor (`style.json` `anchor`, or the preset default), so they all share one look.
 3. Open `sheet --assets --out build/refs_sheet.jpg` and regenerate any reference that is off (rules below) **before** any frame is made: every frame inherits its references.
 4. Run `queue plan/visual_plan.json --only frames`, then review the frames the same way.
+5. **Check every frame that will be animated, at full size, before approving it.** A flaw in the frame carries into the clip. Approve a frame only if all of these hold:
+   - no distorted hands, faces or limbs, and no garbled or extra figure;
+   - it follows its prompt: every ref is present and in the stated position, at the stated size;
+   - the figures are large, fully visible and clearly separated, with nothing crossing them;
+   - a moving subject faces the direction `animate.main` moves it, with open space ahead of it.
+
+   If a frame fails, regenerate it and look again. Then run `python3 -m infogen approve <frame id> ...`. A regenerated frame must be approved again.
+6. Run `queue plan/visual_plan.json --only animate`. It animates only approved frames, and checks each clip for camera movement automatically.
 
 If the plan has an `anchor` prompt because there is no anchor image, the first `queue` makes only the anchor and stops. Look at it (flat colours, outlines, real proportions), then run `queue` again.
 

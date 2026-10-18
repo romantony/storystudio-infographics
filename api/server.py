@@ -48,6 +48,8 @@ class Visuals(BaseModel):
     objects: int = Field(8, ge=0, le=20)               # object references for the visual plan (vehicles, aircraft, props)
     backgrounds: int = Field(8, ge=0, le=20)           # background references for the visual plan (empty sets)
     ltx_clips: int = Field(0, ge=0, le=10)             # animated illustrations (ComfyUI LTX), the most expensive item
+    animated_max_pct: int = Field(20, ge=0, le=40)     # share of the visual plan's frames that may be animated (Wan2.2), a hard cap
+    animated_clips: int = Field(18, ge=0, le=30)       # absolute ceiling on animation attempts, retries included
     charts: bool = True; maps: bool = True
     captions_long: bool = False; captions_shorts: bool = True
 class Limits(BaseModel):

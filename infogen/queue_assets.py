@@ -18,10 +18,10 @@ Given a visual plan (plan/visual_plan.json, see infogen/visual_plan.py) instead,
 anchor if it must be generated (then stops so it can be looked at), the references, then the frames.
 --only anchor,refs,frames picks stages; review the references' contact sheet before the frames are paid for."""
 import json, os, sys, time
-from . import cutout, ltx, rp, style as STY, visual_plan as VP
+from . import animate as AN, cutout, ltx, rp, style as STY, visual_plan as VP
 from .common import ASSETS, find_asset, mkdirs
 STATE = "build/queue_state.json"
-PLAN_STAGES = {"anchor", "refs", "frames"}
+PLAN_STAGES = {"anchor", "refs", "frames", "animate"}
 
 def main(cmd, argv):
     if not argv: sys.exit(__doc__ + "\n\n" + VP.__doc__)
@@ -32,11 +32,13 @@ def main(cmd, argv):
     save = lambda: json.dump(st, open(STATE, "w"), indent=1)
     pid = spec.get("project_id") or os.path.basename(os.getcwd())
     path = lambda i, ext: f"{ASSETS}/{i}.{ext}"
-    failed = []
-    if VP.is_plan(spec):   # a visual plan (plan/visual_plan.json): anchor -> references -> frames
-        err, _ = VP.check(spec)
+    failed, warnings = [], []
+    if VP.is_plan(spec):   # a visual plan (plan/visual_plan.json): anchor -> references -> frames -> animations
+        visuals = json.load(open("request.json")).get("visuals", {}) if os.path.exists("request.json") else None
+        err, _ = VP.check(spec, visuals)
         if err: sys.exit("visual plan has errors (run validate --plan):\n" + "\n".join(err))
         VP.run(spec, st_, st, save, pid, only & PLAN_STAGES, failed)
+        if "animate" in only: AN.run(spec, st, save, pid, visuals, failed, warnings)
         only -= {"images", "characters"}   # the plan's own "characters" are references, not old-style text-to-image poses
 
     def fin(i, res, ext, urlkeys):
@@ -97,5 +99,5 @@ def main(cmd, argv):
         if pending: time.sleep(10)
     for i in pending: st[i]["error"] = "timeout"; failed.append(i)
     save()
-    print(json.dumps({"failed": failed, "files": sorted(e["file"] for e in st.values() if e.get("file"))}))
+    print(json.dumps({"failed": failed, "warnings": warnings, "files": sorted(e["file"] for e in st.values() if isinstance(e, dict) and e.get("file"))}))
     if failed: sys.exit(1)

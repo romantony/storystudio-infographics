@@ -19,13 +19,13 @@ plan/visual_plan.json:
 - A frame is one qwen-image-edit job: image 1 is its background, images 2-3 its first two refs; a third ref is added in
   a second pass, described by `add`. A frame with no background is text-to-image from its prompt and takes no refs.
 - `label` is how a prompt names the reference ("the pilot"); default: the id with spaces.
-- `animate` on a frame is accepted for the animation stage (not run yet).
+- `animate` on a frame animates it with Wan2.2, within the request's cap: see infogen/animate.py. Keep it simple.
 
-python3 -m infogen queue plan/visual_plan.json [--only anchor,refs,frames]
+python3 -m infogen queue plan/visual_plan.json [--only anchor,refs,frames,animate]
 python3 -m infogen validate --plan plan/visual_plan.json      (with the script checks; budget from request.json)"""
 import base64, io, json, os, re, sys
 from PIL import Image
-from . import cutout, rp, style as STY
+from . import animate as AN, cutout, rp, style as STY
 from .common import ASSETS, APP
 
 GROUPS = ("characters", "objects", "backgrounds")
@@ -66,11 +66,15 @@ def check(plan, visuals=None):
         if len(rs) > MAX_IMAGES: err.append(f"{fid}: at most {MAX_IMAGES} refs (image 1 is the background)")
         if rs and not f.get("background"): err.append(f"{fid}: refs need a background (image 1 is the setting they are placed into)")
         if len(rs) == MAX_IMAGES and not str(f.get("add", "")).strip(): err.append(f"{fid}: a third ref is added in a second pass; say how in \"add\"")
-        if "animate" in f and not isinstance(f["animate"], dict): err.append(f"{fid}: animate must be an object")
+        if "animate" in f: err += AN.check(f["animate"], fid)
     for g, (field, default) in BUDGET.items():
         cap = (visuals or {}).get(field, default) if visuals is not None else None
         n = len(plan.get(g, []))
         if cap is not None and n > cap: err.append(f"{g}: {n} planned, the request allows {cap} (visuals.{field})")
+    n_anim = sum(1 for f in plan.get("frames", []) if isinstance(f, dict) and f.get("animate"))
+    allowed = AN.cap(plan, visuals)
+    if n_anim > allowed: err.append(f"frames: {n_anim} animated, the cap allows {allowed} (visuals.animated_max_pct of {len(plan.get('frames', []))} frames, "
+                                    f"at most visuals.animated_clips); animate only the key beats")
     used = {r for f in plan.get("frames", []) if isinstance(f, dict) for r in f.get("refs", [])} | {f.get("background") for f in plan.get("frames", []) if isinstance(f, dict)}
     for r in refs:
         if r not in used: warn.append(f"{r}: no frame uses it (it is still paid for)")
@@ -80,7 +84,11 @@ def check_scenes(plan, scenes):
     """Warnings for how the script uses the frames: unused frames, a frame carrying more than 2 scenes, a frame used again
     after other scenes came between (one picture = one visual beat, at most two consecutive scenes with different crops)."""
     warn = []; fids = [f["id"] for f in plan.get("frames", []) if isinstance(f, dict) and "id" in f]
-    order = [s.get("image") for s in scenes if s.get("type") == "illustration"]
+    animated = {f["id"] for f in plan.get("frames", []) if isinstance(f, dict) and f.get("animate")}
+    for s in scenes:
+        if s.get("type") == "clip" and s.get("clip") in fids and s["clip"] not in animated:
+            warn.append(f"scene {s.get('n')}: clip {s['clip']!r} is a frame with no \"animate\"; the still will be shown")
+    order = [s.get("image") or (s.get("clip") if s.get("type") == "clip" else None) for s in scenes if s.get("type") in ("illustration", "clip")]
     for fid in fids:
         pos = [i for i, x in enumerate(order) if x == fid]
         if not pos: warn.append(f"{fid}: no illustration scene uses this frame"); continue
@@ -132,7 +140,11 @@ def frame_passes(f, refs, st):
     placed = "; ".join(f"{label(r)} from image {i + 2}" for i, r in enumerate(rs[:2]))
     p1 = ("Flat vector infographic scene in the same style as the reference images. Use image 1 as the setting and keep it. "
           + (f"Place {placed}, keeping their exact faces, outfits, proportions and colours unchanged. " if placed else "")
-          + f"{STY.expand(f['prompt'], st)}. Every figure is fully inside the frame at a natural size for the setting, no extra people.{look}")
+          + f"{STY.expand(f['prompt'], st)}. Every figure is fully inside the frame at a natural size for the setting, no extra people."
+          # frames to be animated: a distorted, crowded or wrong-facing frame becomes a distorted clip
+          + (" Composed for animation: every figure large, fully visible and clearly separated, clean hands and faces, nothing overlapping a figure, "
+             "open space in the direction any subject will move." if f.get("animate") else "")
+          + look)
     passes = [{"prompt": p1}]
     if len(rs) == MAX_IMAGES:
         passes.append({"prompt": f"Keep image 1 exactly as it is, including everyone in it. Add {label(rs[2])} from image 2, keeping its exact shape and colours: "
