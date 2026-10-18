@@ -4,30 +4,43 @@ style.json in the run folder (all keys optional; anything missing comes from the
 { "preset": "flat_vector" | "noir_vector" | "paper",
   "palette": {"bg": "#0E2740", "accent": "#FFC93C", ...},          see remotion/src/theme.ts for every key
   "cast": {"narrator_guy": "a young man, short brown hair, orange hoodie, jeans, white sneakers"},
+  "era": "Berlin, 1948-49",                                        the time and place every picture must match
+  "palette_prompt": "muted 1940s palette of olive green, khaki, slate blue, warm grey and cream",
   "logo": "assets/logo.png" }
 
 Prompts in assets.json may name cast members in braces, "{narrator_guy} staring at a falling stock chart": the
-description is substituted, so a character looks the same in every image.
+description is substituted, so a character looks the same in every image. `era` and `palette_prompt` are added to
+every image prompt, so clothing, vehicles and colours stay in period across the whole video.
 
 python3 -m infogen style            print the resolved style
 """
 import json, os, re, sys
 
-BASE_STYLE = ("flat 2D vector illustration in the style of a modern animated explainer video, clean geometric shapes, bold flat colours, "
-              "simple soft cel shading, smooth gradient sky or background, simple rounded cartoon people with large heads and simple dot eyes, "
-              "expressive poses, minimal detail, crisp edges")
+# Flat infographic look with grown-up proportions. Explicitly no gradients or lighting: the model adds both by default,
+# and they are what made earlier runs look painterly. People are drawn at real proportions (the old wrapper asked for
+# "large heads", which gave a chibi look).
+BASE_STYLE = ("flat vector infographic illustration, minimalist 2D, clean geometric shapes, bold uniform outlines, "
+              "flat colour fills with no gradients, no lighting effects and no texture, simple faces with dot eyes, "
+              "realistic adult body proportions with the head about one seventh of body height, children drawn as children, "
+              "minimal detail, crisp edges")
+NEGATIVE = ("text, letters, words, captions, watermark, logo, signature, photo, photorealistic, 3d render, painterly, glossy, "
+            "realistic lighting, soft shading, gradient, chibi, big head, oversized head, blurry, extra limbs, deformed hands")
 PRESETS = {
     "flat_vector": {
         "palette": {},
-        "image_style": BASE_STYLE + ", vibrant saturated palette, cinematic wide composition",
-        "character_style": BASE_STYLE + ", full body character, centred, standing, three-quarter view, isolated on a plain flat solid pure green #00FF00 background, "
-                           "no ground shadow, no scenery, the character contains no green",
-        "negative": "text, letters, words, captions, watermark, logo, signature, photo, photorealistic, 3d render, blurry, extra limbs, deformed hands",
+        "image_style": BASE_STYLE + ", wide 16:9 composition with clear separation between subjects",
+        # Plain white, not green: these figures also serve as reference images for scene edits (VISUAL_UPGRADE_PLAN.md),
+        # and cutout.py removes a plain non-green background by flood fill from the border.
+        "character_style": BASE_STYLE + ", one full-body figure, front-facing, standing, centred with space around it, "
+                           "isolated on a plain flat pure white background, no ground shadow, no scenery",
+        "negative": NEGATIVE,
+        "palette_prompt": "a restrained natural palette of muted colours",
     },
     "noir_vector": {
         "palette": {"bg": "#14141C", "bg2": "#2A1E2E", "accent": "#FF4D4D", "accent2": "#FFC93C", "land": "#3A3A4A", "ocean": "#0E0E14", "border": "#0E0E14",
                     "series": ["#FF4D4D", "#FFC93C", "#E0E0E0", "#7FB7FF", "#B388EB", "#FF9F1C"]},
-        "image_style": BASE_STYLE + ", dark moody palette, deep blues and blacks with red highlights, dramatic rim light, night-time atmosphere, cinematic",
+        "image_style": BASE_STYLE + ", wide 16:9 composition, night-time scene",
+        "palette_prompt": "a dark palette of deep blues and near-blacks with red accents",
         "character_style": None,
         "negative": None,
     },
@@ -35,7 +48,8 @@ PRESETS = {
         "palette": {"bg": "#F4EBDD", "bg2": "#FFF8EC", "text": "#1E2A38", "muted": "#6B7A89", "ink": "#1E2A38", "panel": "#1E2A38", "accent": "#E4572E",
                     "accent2": "#2E86AB", "land": "#D9C7A7", "landHi": "#E4572E", "ocean": "#BFD7EA", "border": "#F4EBDD",
                     "series": ["#E4572E", "#2E86AB", "#76B041", "#F3A712", "#A23B72", "#1E2A38"]},
-        "image_style": BASE_STYLE + ", warm paper-cutout look, subtle paper grain texture, muted warm palette",
+        "image_style": BASE_STYLE + ", warm paper-cutout look, subtle paper grain texture, wide 16:9 composition",
+        "palette_prompt": "a muted warm palette",
         "character_style": None,
         "negative": None,
     },
@@ -47,7 +61,8 @@ def load(path="style.json"):
     out = {k: (pre.get(k) if pre.get(k) is not None else base[k]) for k in base}
     out["palette"] = {**pre["palette"], **s.get("palette", {})}
     out["cast"] = s.get("cast", {}); out["logo"] = s.get("logo"); out["preset"] = s.get("preset", "flat_vector")
-    for k in ("image_style", "character_style", "negative"):
+    out["era"] = s.get("era")
+    for k in ("image_style", "character_style", "negative", "palette_prompt"):
         if s.get(k): out[k] = s[k]
     return out
 
@@ -62,7 +77,8 @@ def expand(prompt, st):
 def image_prompt(prompt, st, kind="scene"):
     body = expand(prompt, st)
     wrap = st["character_style"] if kind == "character" else st["image_style"]
-    return f"{body}. {wrap}. Avoid: {st['negative']}."
+    era = f", everything historically accurate for {st['era']}" if st.get("era") else ""
+    return f"{body}. {wrap}, {st['palette_prompt']}{era}. Avoid: {st['negative']}."
 
 def main(cmd, argv):
     print(json.dumps(load(), indent=1))

@@ -10,7 +10,7 @@ assets.json:
   "bgm":        [{"id": "bgm_long", "prompt": "...", "seconds": 120}],
   "ltx":        [{"id": "ltx_city_night", "image": "city_night", "prompt": "...", "secs": 5}] }
 Prompts are wrapped in the series style (style.py): scenes in the illustration style, characters in the character style
-on a flat green background, after which they are cut out automatically to <asset dir>/cutouts/<id>.png.
+on a plain white background, after which they are cut out automatically to <asset dir>/cutouts/<id>.png.
 Name recurring people as {cast_id} so every image uses the same description from style.json.
 Outputs land in the asset dir as <id>.png | .mp3 | .mp4."""
 import json, os, sys, time

@@ -69,7 +69,15 @@ These videos are built around one strong question and a relentless visual rhythm
 
 **Research.** Before writing, research the topic with WebSearch and WebFetch. Write `research/sources.md`: every number, date and claim you will use, each with its source (publisher, title, year, URL). Prefer primary and official sources (statistics agencies, company filings, peer-reviewed papers, major newspapers). Numbers on screen come only from this file. If a number cannot be sourced, do not show it. If the topic is breaking news, say in a warning how fresh the sources are.
 
-**Style and cast.** `style.json` is written from the request. If its `cast` is empty and the story has people, add one to three recurring characters with a fixed, specific visual description (age, hair, clothes, one colour accent) and use them as `{id}` in every character and scene prompt, so they look the same throughout. Do not base a character on a real, identifiable person.
+**Style and cast.** `style.json` is written from the request. After the research, add to it:
+- `era`: the time and place the pictures must match, for example `"Berlin, 1948-49"`, or `"present day"` for a modern topic.
+- `palette_prompt`: a colour line that suits the period, for example `"muted 1940s palette of olive green, khaki, slate blue, warm grey and cream"`.
+
+Both are added to every image prompt.
+
+If its `cast` is empty and the story has people, add one to three recurring characters with a fixed, specific visual description (age, period-correct clothing, hair, one colour accent) and use them as `{id}` in every character and scene prompt, so they look the same throughout. Draw people at real proportions; the style already says so, so do not ask for cute, big-headed or chibi figures. Do not base a character on a real, identifiable person.
+
+For a historical topic, also give every vehicle, aircraft, weapon and uniform in a prompt its period-correct type and a short visual description (for example "a Douglas C-54 Skymaster: four propeller engines, single tall tail fin, bare aluminium"). Never write just "a cargo plane" or "a military truck": the model fills in a modern one.
 
 **Script.** Write `script/script.json` (format: `python3 -m infogen build` docstring and `/app/docs/SCENES.md`). Narration runs at about 2.6 words per second, so `target_seconds` of 600 means about 1,550 words. Set `narrator_voice` from the request, `captions` from `visuals.captions_long`, `series` and `next` from the series details, and a `chapter` on the first scene of each section (at least three). Put `"verify": true` and a `verify_note` naming the source on every scene that states a number, date, quotation or causal claim, and a short `source` on every data scene (it is shown on screen). Do not present a paraphrase as a quotation.
 
@@ -79,7 +87,15 @@ Run `validate` (with `--assets assets.json --target-seconds <n>` for the long vi
 
 **Assets.** Write one `assets.json` with all images, characters, music and animations, within the request's budget: `visuals.illustrations` scene images, `visuals.characters` character poses, `visuals.ltx_clips` animations (0 means none), music for the long video (`bgm_long`, 120 s) and one track per Short (`bgm_<short id>`, 50 s). Save images by reusing: one illustration can carry two or three consecutive scenes with different camera moves (`"move": {"from": [x, y, zoom], "to": [x, y, zoom]}` frames a part of the picture). Image prompts describe the picture only, never text, labels or numbers (those are added by the templates, spelled correctly). Character prompts describe one person in one pose with one expression. Run `queue assets.json`.
 
-**Look at every image before using it.** Run `sheet --assets --out build/assets_sheet.jpg` and open it. Regenerate images that show text, extra limbs, the wrong era or place, or that drift from the cast description (delete the file and its entry in `build/queue_state.json`, adjust the prompt, queue again). Check each cut-out on the sheet: a character missing parts or with a green fringe gets `cutout <id> --tol 40` or a regeneration.
+**Look at every image before using it.** Run `sheet --assets --out build/assets_sheet.jpg` and open it. Regenerate any image (delete the file and its entry in `build/queue_state.json`, adjust the prompt, queue again) that:
+- shows text or extra limbs;
+- drifts from the cast description;
+- uses gradients, lighting or a painterly, 3D or chibi look;
+- shows anything out of period: check every vehicle, aircraft, uniform, weapon and building against `era`.
+
+Count the regenerations made for era errors in a warning.
+
+Check each cut-out on the sheet: a character missing parts or with a background fringe gets `cutout <id> --tol 40` or a regeneration.
 
 **Narration and timings.** Run `tts` and `timings` for the long video and with `--short <id>` for each Short. Send plain text only: a style instruction in front of the text gets read aloud.
 

@@ -1,9 +1,10 @@
 """Cut a character out of its plain background, for the cast layer of illustration scenes and for thumbnails.
 python3 -m infogen cutout <asset id or path> [...] [--out-dir assets/cutouts] [--tol 60]
 
-Characters are generated on a flat pure-green background (see style.py), which keys cleanly: every pixel close to the key
-colour goes, wherever it is. On any other plain background only the region connected to the border is removed, so a
-white shirt on a white background survives. Green fringe is suppressed and the edge is feathered by a pixel.
+Characters are generated on a plain white background (see style.py). On a plain non-green background only the region
+connected to the border is removed, so a white shirt inside the character's outline survives. A flat pure-green
+background (older runs) is chroma-keyed instead: every pixel close to the key colour goes, wherever it is, and green
+fringe is suppressed. Either way the edge is feathered by a pixel.
 Writes <out-dir>/<id>.png (RGBA, cropped to the character). Look at the result (sheet) before using it."""
 import os, sys
 import numpy as np
