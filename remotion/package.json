@@ -1,0 +1,24 @@
+{
+  "name": "infogen-scenes",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Motion-graphics scene templates for infogen (charts, maps, versus, timelines, illustrated scenes), rendered by Remotion",
+  "scripts": {
+    "bundle": "remotion bundle src/index.ts --out-dir bundle",
+    "studio": "remotion studio src/index.ts"
+  },
+  "dependencies": {
+    "@fontsource/montserrat": "5.2.8",
+    "@remotion/cli": "4.0.534",
+    "@remotion/renderer": "4.0.534",
+    "@types/react": "19.3.0",
+    "d3-geo": "3.1.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "remotion": "4.0.534",
+    "topojson-client": "3.1.0",
+    "typescript": "7.0.2",
+    "world-atlas": "2.0.2"
+  }
+}

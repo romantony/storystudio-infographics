@@ -1,0 +1,20 @@
+# On the EC2 instance: /opt/infogen/docker-compose.yml, with /opt/infogen/.env next to it (see .env.example).
+services:
+  infogen:
+    image: ${INFOGEN_IMAGE_URI:-infogen:local}
+    env_file: .env
+    environment:
+      INFOGEN_GEOMETRY: ${INFOGEN_GEOMETRY:-1600x900}
+      # where finished outputs go, and the CDN in front of that bucket; a parameter of the same name under /infogen/ overrides these
+      INFOGEN_OUTPUT_BUCKET: ${INFOGEN_OUTPUT_BUCKET:-storystudio-unified-storage-prod}
+      INFOGEN_OUTPUT_BASE_URL: ${INFOGEN_OUTPUT_BASE_URL:-https://cdn-v2.ai-storystudio.com}
+    ports:
+      - "8080:8080"             # API. The security group admits only CloudFront; the API also checks the origin header.
+      - "127.0.0.1:6080:6080"   # desktop (noVNC). Reach it with SSM port forwarding, never publicly.
+    volumes:
+      - /data/infogen/data:/data             # run folders and the Claude config (Claude sessions)
+      - /data/infogen/home:/home/infogen      # desktop profile, Firefox profile, shell history
+      # Uncomment to edit the scripts from the desktop and have them survive restarts. Commit changes back to git.
+      # - /data/infogen/app:/app
+    shm_size: 1gb
+    restart: unless-stopped

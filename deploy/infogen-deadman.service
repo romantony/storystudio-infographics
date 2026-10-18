@@ -1,0 +1,5 @@
+[Unit]
+Description=stop the instance when infogen has been idle
+[Service]
+Type=oneshot
+ExecStart=/opt/infogen/deadman.sh

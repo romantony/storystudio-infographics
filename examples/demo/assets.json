@@ -1,0 +1,7 @@
+{"project_id": "infogen_demo",
+ "images": [
+  {"id": "city_night", "prompt": "a modern city skyline at night seen from a rooftop, glowing office towers, a big full moon", "aspect": "16:9"},
+  {"id": "server_hall", "prompt": "a vast data centre hall with endless rows of glowing server racks, cool blue light", "aspect": "16:9"}],
+ "characters": [
+  {"id": "analyst_worried", "prompt": "{analyst} looking worried, both hands on her head", "aspect": "9:16"}],
+ "bgm": [{"id": "bgm_long", "prompt": "light tense electronic underscore for an explainer video, pulsing synth, 100 bpm, no vocals", "seconds": 120}]}

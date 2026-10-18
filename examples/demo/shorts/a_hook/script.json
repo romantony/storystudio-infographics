@@ -1,0 +1,7 @@
+{"title": "Demo Short", "narrator_voice": "Puck", "series": "INFOGEN DEMO",
+ "scenes": [
+  {"n": 1, "type": "illustration", "image": "city_night", "move": {"from": [0.35, 0.6, 1.3], "to": [0.45, 0.55, 1.45]}, "narration": "Every screen in this city is still on at three in the morning.",
+   "cast": [{"src": "analyst_worried", "x": 0.5, "h": 0.5, "cue": "screen"}]},
+  {"n": 2, "type": "counter", "value": "5,000", "label": "screens, all made up", "icon": "📺", "source": "Invented for this demo", "verify": true, "verify_note": "demo",
+   "narration": "Five thousand of them, and this number is made up for the demo."}
+ ]}

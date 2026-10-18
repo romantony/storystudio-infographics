@@ -1,0 +1,8 @@
+.git
+.venv
+**/node_modules
+remotion/bundle
+**/__pycache__
+tests
+examples
+.env
