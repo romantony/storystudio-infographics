@@ -1,15 +1,17 @@
 """Check scripts before anything is generated or rendered.
-python3 -m infogen validate [--short <id>] [--assets assets.json] [--target-seconds 600]
+python3 -m infogen validate [--short <id>] [--assets assets.json] [--plan plan/visual_plan.json] [--target-seconds 600]
 
 Reports: unknown scene types, missing template fields, cues that are not in the narration, data scenes without a
 source, long scenes (a visual change every 4 to 10 seconds is the format), pictures used too often, the estimated length
-against the target, and image ids that neither exist nor are in assets.json. Exit code 1 on errors, 0 with warnings."""
+against the target, and image ids that neither exist nor are in assets.json or the visual plan. With --plan, also the
+plan itself (ids, references per frame, the budget in request.json) and how the scenes use its frames. Exit code 1 on
+errors, 0 with warnings."""
 import json, os, sys
 from collections import Counter
 from .build import TYPES, items_of
 from .common import find_asset, load
 from .narration import WPS, paths
-from . import timing
+from . import timing, visual_plan as VP
 
 REQUIRED = {"illustration": ["image"], "bar_chart": ["items"], "line_chart": ["points"], "donut": ["items"], "counter": ["value"], "icons": ["total", "highlight"],
             "versus": ["a", "b"], "timeline": ["events"], "list": ["items"], "map": [], "title": ["title"], "timecard": ["text"], "text": ["text"], "clip": ["clip"]}
@@ -23,6 +25,12 @@ def main(cmd, argv):
         A = json.load(open(argv[argv.index("--assets") + 1]))
         planned = {x["id"] for g in ("images", "characters", "ltx") for x in A.get(g, [])}
     err, warn = [], []
+    if "--plan" in argv:
+        P = json.load(open(argv[argv.index("--plan") + 1]))
+        visuals = json.load(open("request.json")).get("visuals", {}) if os.path.exists("request.json") else None
+        pe, pw = VP.check(P, visuals); err += [f"plan: {e}" for e in pe]; warn += [f"plan: {w}" for w in pw]
+        if not sid: warn += [f"plan: {w}" for w in VP.check_scenes(P, sc)]   # Shorts reuse the long video's frames
+        planned |= VP.ids(P)
     seen = Counter()
     words = 0
     for s in sc:
@@ -41,7 +49,7 @@ def main(cmd, argv):
         if t in DATA and not s.get("verify"): warn.append(f"{lab}: {t} is not marked \"verify\"")
         ids = [s.get("image")] + [c.get("src") or c.get("id") for c in s.get("cast", [])] + [s.get("clip")]
         for i in filter(None, ids):
-            if not find_asset(i, ("png", "jpg", "jpeg", "webp", "mp4")) and i not in planned: err.append(f"{lab}: asset {i!r} neither exists nor is in assets.json")
+            if not find_asset(i, ("png", "jpg", "jpeg", "webp", "mp4")) and i not in planned: err.append(f"{lab}: asset {i!r} neither exists nor is in assets.json or the visual plan")
         if t == "illustration": seen[s.get("image")] += 1
     for img, k in seen.items():
         if k > 4: warn.append(f"image {img!r} carries {k} scenes; vary the camera move or add another picture")

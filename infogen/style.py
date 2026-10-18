@@ -6,6 +6,7 @@ style.json in the run folder (all keys optional; anything missing comes from the
   "cast": {"narrator_guy": "a young man, short brown hair, orange hoodie, jeans, white sneakers"},
   "era": "Berlin, 1948-49",                                        the time and place every picture must match
   "palette_prompt": "muted 1940s palette of olive green, khaki, slate blue, warm grey and cream",
+  "anchor": "assets/anchor.png",                                  style sample every reference is drawn from (path or URL; default infogen/anchors/<preset>.png)
   "logo": "assets/logo.png" }
 
 Prompts in assets.json may name cast members in braces, "{narrator_guy} staring at a falling stock chart": the
@@ -61,7 +62,7 @@ def load(path="style.json"):
     out = {k: (pre.get(k) if pre.get(k) is not None else base[k]) for k in base}
     out["palette"] = {**pre["palette"], **s.get("palette", {})}
     out["cast"] = s.get("cast", {}); out["logo"] = s.get("logo"); out["preset"] = s.get("preset", "flat_vector")
-    out["era"] = s.get("era")
+    out["era"] = s.get("era"); out["anchor"] = s.get("anchor")
     for k in ("image_style", "character_style", "negative", "palette_prompt"):
         if s.get(k): out[k] = s[k]
     return out

@@ -2,7 +2,8 @@
 import json, os, time, urllib.request
 from .common import key
 EP = {"bgm": os.environ.get("RUNPOD_EP_BGM", "6apg6j7suzuezw"), "mm": os.environ.get("RUNPOD_EP_MMAUDIO", "nzkcsef9t2iv7s"),
-      "qwen": os.environ.get("RUNPOD_EP_QWEN", "e165se4r3eo5hp"), "flux": os.environ.get("RUNPOD_EP_FLUX", "rnqxi6c0mlq517"),
+      "qwen": os.environ.get("RUNPOD_EP_QWEN", "e165se4r3eo5hp"), "qedit": os.environ.get("RUNPOD_EP_QWEN_EDIT", "oxwx8o879qwtla"),
+      "flux": os.environ.get("RUNPOD_EP_FLUX", "rnqxi6c0mlq517"),
       "itk": os.environ.get("RUNPOD_EP_INFINITETALK", "infinitetalk")}
 def call(url, body=None):
     req = urllib.request.Request(url, json.dumps(body).encode() if body is not None else None,

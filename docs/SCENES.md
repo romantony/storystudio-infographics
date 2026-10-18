@@ -21,7 +21,7 @@ Every scene in `script/script.json` (and `shorts/<id>/script.json`) has a `type`
 
 ## illustration
 
-The generated cartoon world with a camera move, the cast, and labels. The workhorse: most scenes.
+The generated cartoon world with a camera move, the cast, and labels. The workhorse: most scenes. `image` is normally a frame id from the visual plan (`plan/visual_plan.json`), with the characters already composed into the picture, so `cast` is left out.
 
 ```json
 {"type": "illustration", "image": "city_night", "move": "zoom_in",
@@ -30,7 +30,7 @@ The generated cartoon world with a camera move, the cast, and labels. The workho
  "tint": "rgba(255,0,0,0.25)"}
 ```
 - `move`: `zoom_in`, `zoom_out`, `pan_left`, `pan_right`, `pan_up`, `pan_down`, `still`, or `{"from": [x, y, zoom], "to": [x, y, zoom]}` with x, y the point of the picture (0 to 1) at the centre of the frame. Use from/to to get two or three different shots out of one picture.
-- `cast` (revealable, first): cut-out characters standing in the scene. `x` centre, `y` feet (0 top, 1 bottom; default 0.98, or 0.6 in Shorts so the captions stay clear), `h` height as a share of the frame, `flip` mirrors. They pop in, bob and breathe.
+- `cast` (revealable, first, optional): cut-out characters laid over the picture, for a figure that is not in the frame itself. `x` centre, `y` feet (0 top, 1 bottom; default 0.98, or 0.6 in Shorts so the captions stay clear), `h` height as a share of the frame, `flip` mirrors. They pop in, bob and breathe.
 - `callouts` (revealable, after the cast): label bubbles pointing down at (`x`, `y`).
 
 ## bar_chart

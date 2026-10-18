@@ -1,6 +1,24 @@
 # Visual upgrade plan: grown-up flat-vector characters, reference-built scenes, selective LTX animation
 
-Draft, 2026-10-18. Status: proposed, nothing implemented.
+Draft, 2026-10-18. Status: Phase 1 (style.py, infogen 82a526e), the `qwen-image-edit` multi-image worker (Qwen-Edit c47143e, live) and Phase 2 (visual plan: `infogen/visual_plan.py`, `queue` / `validate --plan`, runbook) are done; Phases 3–5 are proposed.
+
+## Test results, 2026-10-18 (Berlin Airlift, about $0.25 in total, mostly cold starts)
+
+| Step | Result |
+|---|---|
+| Text-to-image with the new Phase 1 wrapper | Period accuracy fixed: 1940s truck, silver four-engine propeller transports, period clothes. Scenes have adult proportions. **But** the images keep shading and texture (graphic-novel look), and **full-body sheets stay chibi** in three prompt variants, including style-first and "eight heads tall". Text prompts alone don't get Qwen to the target look. |
+| **Style anchor** (`qwen-image-edit`, image 1 = a flat character sheet in the target style, prompt "draw a new picture in exactly the same style as image 1, but of …") | **Works.** The children and a Berlin mother came out in the anchor's flat style with adult proportions. A C-54 drawn new this way is correct (four radial engines, single fin). **Restyling** a detailed reference (the old C-54 sheet) failed, giving a deformed plane; restyling a background barely changed it. → Generate every reference *new* from the anchor rather than restyling. |
+| Composition (background + pilot + children in pass 1, then the C-54 added in pass 2) | Works. All three keep their reference looks, and the output is 16:9 (1376×768). The fixed output size held even with a square or portrait image 1. 53 s for 2 passes. Flaws: a garbled extra figure, the fence layered through a child, and the pilot too large (legs cut off). The review step must catch these; prompts need explicit size and placement. |
+| Wan2.2 i2v on the composed frame (480p, 5 s, 4 steps) | The camera stayed put and the characters stayed in frame. The pilot waves, then lowers his arm and turns to watch. The children's arms move, and the plane moves and descends. The flat style holds. **Output is 832×464 at 16 fps** (81 frames): it needs scaling to 1920×1080 and conversion to 30 fps. Generation took 89 s; wall time with a cold start was 274 s. |
+| Drift check (correlation of the first vs last frame, lower two-thirds) | 0.785 on the first clip; **0.553 on the guideline-prompt clip, which is also good**: there the plane landed into the lower frame. A whole-region correlation can't tell "the subject moved there" from "the camera moved". The check must compare only the `[STILL ELEMENTS]` regions, using a mask from the background reference (where the background equals the composed frame), or an optical-flow estimate of global camera motion. |
+| Same frame and seed, prompt per the Wan2.2 guideline (69 words, slots in order) | **Better motion:** the plane really lands, the children turn their heads to follow it, and the pilot waves and turns. The camera stayed fixed. New issue: "descending toward the runway" brought the plane down large and close behind the pilot, covering the background, and a smoke plume appeared unprompted. Main-motion wording needs scale and position ("high in the background, staying small"). Adopted as the prompt standard (see "Wan2.2 i2v prompt rules"). |
+
+**Phase 2 real run** (`queue plan/visual_plan.json`, 6 references and 3 frames, Berlin): references drawn from the default anchor came out flat with adult proportions, and the C-54 had four engines. **Backgrounds with the anchor as image 1 kept the anchor's pilot** in the empty set, whatever the prompt said. They are now drawn onto a blank canvas (image 1) with the anchor as image 2, which gives a clean empty set. Frames with explicit placement ("fully visible, about half the frame height") came out without the garbled figure, the fence through a child or the cropped legs from the first test. Weakest point: background detail (the bombed-out blocks became a generic skyline).
+
+**Consequence for Phase 2:** the series needs a **style anchor**, one flat character sheet in the target look:
+- It is generated once per series, or chosen from a small library, and kept in `style.json` as `anchor`.
+- Every character, object and background reference is drawn from it with `qwen-image-edit`, rather than from text with `qwen-image-gen`.
+- `qwen-image-gen` stays for the anchor itself and for scenes with no recurring subjects.
 
 ## Why
 
@@ -198,6 +216,27 @@ These times exclude the model load on each newly started worker.
 - **Resolution:** Wan's 480p clips are scaled to 1080p in Remotion. Flat colours survive the scaling, but outlines soften slightly; check this in the Phase 3 proof.
 - **Clip length:** `duration_s` = the frame's narration length rounded up, between 3 and 7 s. A frame that runs longer holds its last frame, as the `clip` scene already does.
 - **Shared rules for both engines:** the locked-camera prompt suffix, the negative prompt and the drift check from Phase 3.
+
+### Wan2.2 i2v prompt rules (LightX2V 4-step; from the team's guideline)
+
+Every clip prompt has these slots, in this order, in about 40–80 words:
+
+```
+[MAIN MOTION]      one subject, one action verb, a direction and a speed:   "A silver four-engine propeller plane flies slowly from left to right across the sky, descending toward the runway, propellers spinning."
+[SECONDARY MOTION] characters named by POSITION, 1–2 small actions each:    "The pilot on the left smiles and waves his raised hand side to side. The three children behind the fence turn their heads to follow the plane."
+[AMBIENT MOTION]   optional, subtle:                                         "Grey clouds drift slowly."
+[STILL ELEMENTS]   what must not move, to stop background warping:           "The ruined buildings and runway stay still."
+[CAMERA]           exactly one move:                                          "Static camera." (or slow push-in / slow pan left / slow pan right)
+[STYLE LOCK]       always last, the same wording in every clip:               "Flat 2D cartoon animation, consistent line art and colors."
+```
+
+- Use strong, visible verbs (flies, waves, turns, walks, falls), not vague ones (lively, dynamic).
+- Don't describe what the image already shows (clothes, colours, faces).
+- Use **no negative prompt** (CFG 1). Fix problems by rewording the positive prompt ("… stays still") or by having fewer moving parts.
+- Keep the seed fixed while iterating on a prompt. Store the seed per clip.
+- Our endpoint runs 4 steps at 480p (832×480). 720p runs out of memory on it, even though the guideline lists 1280×720 for finals.
+
+`queue` builds the prompt from these slots: the visual plan's `animate` block gives `main`, `secondary`, `ambient`, `still` and `camera`, and the style lock is fixed per series. The prompt is checked for length (40–80 words) and for having exactly one camera move. The LTX path keeps its own wording.
 
 ## Order of work and size
 

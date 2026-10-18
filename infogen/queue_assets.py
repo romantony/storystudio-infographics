@@ -12,22 +12,32 @@ assets.json:
 Prompts are wrapped in the series style (style.py): scenes in the illustration style, characters in the character style
 on a plain white background, after which they are cut out automatically to <asset dir>/cutouts/<id>.png.
 Name recurring people as {cast_id} so every image uses the same description from style.json.
-Outputs land in the asset dir as <id>.png | .mp3 | .mp4."""
+Outputs land in the asset dir as <id>.png | .mp3 | .mp4.
+
+Given a visual plan (plan/visual_plan.json, see infogen/visual_plan.py) instead, it runs the plan's stages: the style
+anchor if it must be generated (then stops so it can be looked at), the references, then the frames.
+--only anchor,refs,frames picks stages; review the references' contact sheet before the frames are paid for."""
 import json, os, sys, time
-from . import cutout, ltx, rp, style as STY
+from . import cutout, ltx, rp, style as STY, visual_plan as VP
 from .common import ASSETS, find_asset, mkdirs
 STATE = "build/queue_state.json"
+PLAN_STAGES = {"anchor", "refs", "frames"}
 
 def main(cmd, argv):
-    if not argv: sys.exit(__doc__)
+    if not argv: sys.exit(__doc__ + "\n\n" + VP.__doc__)
     spec = json.load(open(argv[0])); st_ = STY.load()
-    only = set(argv[argv.index("--only") + 1].split(",")) if "--only" in argv else {"images", "characters", "bgm", "ltx"}
+    only = set(argv[argv.index("--only") + 1].split(",")) if "--only" in argv else {"images", "characters", "bgm", "ltx"} | PLAN_STAGES
     mkdirs(ASSETS, f"{ASSETS}/cutouts", "build")
     st = json.load(open(STATE)) if os.path.exists(STATE) else {}
     save = lambda: json.dump(st, open(STATE, "w"), indent=1)
     pid = spec.get("project_id") or os.path.basename(os.getcwd())
     path = lambda i, ext: f"{ASSETS}/{i}.{ext}"
     failed = []
+    if VP.is_plan(spec):   # a visual plan (plan/visual_plan.json): anchor -> references -> frames
+        err, _ = VP.check(spec)
+        if err: sys.exit("visual plan has errors (run validate --plan):\n" + "\n".join(err))
+        VP.run(spec, st_, st, save, pid, only & PLAN_STAGES, failed)
+        only -= {"images", "characters"}   # the plan's own "characters" are references, not old-style text-to-image poses
 
     def fin(i, res, ext, urlkeys):
         e = st[i]

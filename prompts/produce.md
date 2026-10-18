@@ -14,7 +14,7 @@ Everything runs from the run folder with `python3 -m infogen <command>`. Each co
 |---|---|
 | `status` | Report progress. See "Reporting". |
 | `style` | Print the resolved look (palette, art prompts, cast). |
-| `queue` | Generate scene illustrations and character poses (Qwen, wrapped in the series style; characters are cut out automatically), music (ACE-Step) and optional LTX animations, from one `assets.json`. Resumable. |
+| `queue` | Generate from one file, resumably: a visual plan (`plan/visual_plan.json`: references drawn from the style anchor, then frames composed from them with Qwen Image Edit), or `assets.json` (music from ACE-Step, optional LTX animations, and single text-to-image pictures). |
 | `cutout` | Cut a character out of its plain background again (with another `--tol`). |
 | `validate` | Check a script before anything is paid for: types, fields, cues, sources, pacing, length, assets. |
 | `tts`, `timings` | Narration (Gemini TTS) and Whisper word timings, per scene, for the long video or `--short <id>`. |
@@ -39,7 +39,7 @@ If you cannot finish, run `status --state failed --error-code <generation_failed
 When `review_mode` is `checkpoints`, pause twice by raising a checkpoint and then ending your turn:
 
 - After the scripts are written and validated, and before anything paid is generated:
-  `status --await cp_script --question "Approve the scripts, or send changes?" --review script/script.json --review research/sources.md --review shorts/a_hook/script.json ...`
+  `status --await cp_script --question "Approve the scripts, or send changes?" --review script/script.json --review plan/visual_plan.json --review research/sources.md --review shorts/a_hook/script.json ...`
 - After everything is built and uploaded:
   `status --await cp_final --question "Approve the final outputs?" --review out/youtube_metadata.md --review build/stills_<slug>.jpg`
 
@@ -83,11 +83,40 @@ For a historical topic, also give every vehicle, aircraft, weapon and uniform in
 
 Then write the Shorts in `shorts/<id>/script.json`, one per requested angle (`a_hook`, `b_stat`, `c_twist`, and so on, in order): the same scene format, 35 to 55 seconds, 90 to 130 words, 7 to 11 scenes of 3 to 6 seconds, the hook in the first sentence, exactly one data scene, captions on (from `visuals.captions_shorts`). Shorts reuse the long video's art.
 
-Run `validate` (with `--assets assets.json --target-seconds <n>` for the long video, and `--short <id>` for each Short) and fix every error before the checkpoint.
+**Visual plan.** Write `plan/visual_plan.json` (format: the docstring of `/app/infogen/visual_plan.py`) at the same time as the script, so the checkpoint covers both. Every illustration scene shows a **frame**, and every frame is composed from **references** drawn in one style:
+- `characters`: every recurring person or group, as `{id}` from `cast` plus a neutral pose. One reference per person, reused in every frame.
+- `objects`: every recurring vehicle, aircraft, weapon or prop, with its period-correct type and a short visual description.
+- `backgrounds`: every recurring place, as an **empty** set with no people and room for figures.
+- `frames`: one per visual beat. Each has:
+  - its `background` and up to 3 `refs`, characters or objects by id;
+  - a `prompt` with the action and the placement. Say where each figure stands and how big it is, for example "the pilot stands on the left, fully visible, about half the frame height".
+  - A third ref is added in a second pass, described in `add`.
 
-**Assets.** Write one `assets.json` with all images, characters, music and animations, within the request's budget: `visuals.illustrations` scene images, `visuals.characters` character poses, `visuals.ltx_clips` animations (0 means none), music for the long video (`bgm_long`, 120 s) and one track per Short (`bgm_<short id>`, 50 s). Save images by reusing: one illustration can carry two or three consecutive scenes with different camera moves (`"move": {"from": [x, y, zoom], "to": [x, y, zoom]}` frames a part of the picture). Image prompts describe the picture only, never text, labels or numbers (those are added by the templates, spelled correctly). Character prompts describe one person in one pose with one expression. Run `queue assets.json`.
+  A frame with no background (a close-up, an abstract picture) is text-to-image and takes no refs.
+
+In the script, an illustration scene names its frame as `"image": "<frame id>"`. A frame may carry at most two consecutive scenes, with different crops (`"move": {"from": [x, y, zoom], "to": [x, y, zoom]}`); never come back to a frame after other scenes.
+
+Budget, from the request:
+- `visuals.illustrations` frames;
+- `visuals.characters` characters;
+- `visuals.objects` objects;
+- `visuals.backgrounds` backgrounds.
+
+Prompts describe pictures only, never text, labels or numbers (the templates add those, spelled correctly). Leave out the cut-out `cast` layer on illustration scenes: the characters are already in the frame.
+
+Run `validate` (with `--assets assets.json --plan plan/visual_plan.json --target-seconds <n>` for the long video, and `--short <id>` for each Short) and fix every error before the checkpoint.
+
+**Assets.**
+1. Write `assets.json` with the music: `bgm_long` (120 s) and one track per Short (`bgm_<short id>`, 50 s). Add `ltx` animations only if `visuals.ltx_clips` > 0. Run `queue assets.json`.
+2. Run `queue plan/visual_plan.json --only refs`. Every reference is drawn new from the series' style anchor (`style.json` `anchor`, or the preset default), so they all share one look.
+3. Open `sheet --assets --out build/refs_sheet.jpg` and regenerate any reference that is off (rules below) **before** any frame is made: every frame inherits its references.
+4. Run `queue plan/visual_plan.json --only frames`, then review the frames the same way.
+
+If the plan has an `anchor` prompt because there is no anchor image, the first `queue` makes only the anchor and stops. Look at it (flat colours, outlines, real proportions), then run `queue` again.
 
 **Look at every image before using it.** Run `sheet --assets --out build/assets_sheet.jpg` and open it. Regenerate any image (delete the file and its entry in `build/queue_state.json`, adjust the prompt, queue again) that:
+- has a garbled or extra figure, or a figure cut off at the frame edge, unless the crop is intended;
+- has something drawn through a person (a fence or pole crossing a body);
 - shows text or extra limbs;
 - drifts from the cast description;
 - uses gradients, lighting or a painterly, 3D or chibi look;
