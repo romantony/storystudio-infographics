@@ -1,43 +1,132 @@
 {
   "family": "infogen-worker",
-  "requiresCompatibilities": ["FARGATE"],
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
   "networkMode": "awsvpc",
-  "runtimePlatform": {"cpuArchitecture": "ARM64", "operatingSystemFamily": "LINUX"},
-  "cpu": "2048", "memory": "4096",
-  "ephemeralStorage": {"sizeInGiB": 50},
+  "runtimePlatform": {
+    "cpuArchitecture": "ARM64",
+    "operatingSystemFamily": "LINUX"
+  },
+  "cpu": "2048",
+  "memory": "4096",
+  "ephemeralStorage": {
+    "sizeInGiB": 50
+  },
   "executionRoleArn": "arn:aws:iam::929075264324:role/infogen-task-execution",
   "taskRoleArn": "arn:aws:iam::929075264324:role/infogen-task",
-  "containerDefinitions": [{
-    "name": "infogen",
-    "image": "929075264324.dkr.ecr.us-east-1.amazonaws.com/infogen:latest",
-    "essential": true,
-    "entryPoint": ["python3", "-m", "api.task"],
-    "workingDirectory": "/app",
-    "stopTimeout": 120,
-    "environment": [
-      {"name": "INFOGEN_RUNNER", "value": "claude"},
-      {"name": "INFOGEN_RUNS_DIR", "value": "/data/runs"},
-      {"name": "CLAUDE_CONFIG_DIR", "value": "/data/claude"},
-      {"name": "ANTHROPIC_MODEL", "value": "claude-sonnet-5-5"},
-      {"name": "INFOGEN_OUTPUT_BUCKET", "value": "storystudio-unified-storage-prod"},
-      {"name": "INFOGEN_OUTPUT_BASE_URL", "value": "https://cdn-v2.ai-storystudio.com"},
-      {"name": "AWS_DEFAULT_REGION", "value": "us-east-1"}
-    ],
-    "secrets": [
-      {"name": "ANTHROPIC_API_KEY", "valueFrom": "arn:aws:ssm:us-east-1:929075264324:parameter/infogen/ANTHROPIC_API_KEY"},
-      {"name": "GEMINI_API_KEY", "valueFrom": "arn:aws:ssm:us-east-1:929075264324:parameter/infogen/GEMINI_API_KEY"},
-      {"name": "RUNPOD_API_KEY", "valueFrom": "arn:aws:ssm:us-east-1:929075264324:parameter/infogen/RUNPOD_API_KEY"},
-      {"name": "INFOGEN_CALLBACK_SECRET", "valueFrom": "arn:aws:ssm:us-east-1:929075264324:parameter/infogen/INFOGEN_CALLBACK_SECRET"}
-    ],
-    "mountPoints": [
-      {"sourceVolume": "runs", "containerPath": "/data/runs"},
-      {"sourceVolume": "claude", "containerPath": "/data/claude"}
-    ],
-    "logConfiguration": {"logDriver": "awslogs", "options": {"awslogs-group": "/ecs/infogen", "awslogs-region": "us-east-1", "awslogs-stream-prefix": "worker"}}
-  }],
-  "volumes": [
-    {"name": "runs", "efsVolumeConfiguration": {"fileSystemId": "fs-0008270b3326f89b3", "transitEncryption": "ENABLED", "authorizationConfig": {"accessPointId": "fsap-08f4466373d8efe00", "iam": "ENABLED"}}},
-    {"name": "claude", "efsVolumeConfiguration": {"fileSystemId": "fs-0008270b3326f89b3", "transitEncryption": "ENABLED", "authorizationConfig": {"accessPointId": "fsap-0e8612ac8e6aabe11", "iam": "ENABLED"}}}
+  "containerDefinitions": [
+    {
+      "name": "infogen",
+      "image": "929075264324.dkr.ecr.us-east-1.amazonaws.com/infogen:latest",
+      "essential": true,
+      "entryPoint": [
+        "python3",
+        "-m",
+        "api.task"
+      ],
+      "workingDirectory": "/app",
+      "stopTimeout": 120,
+      "environment": [
+        {
+          "name": "INFOGEN_RUNNER",
+          "value": "claude"
+        },
+        {
+          "name": "INFOGEN_RUNS_DIR",
+          "value": "/data/runs"
+        },
+        {
+          "name": "CLAUDE_CONFIG_DIR",
+          "value": "/data/claude"
+        },
+        {
+          "name": "ANTHROPIC_MODEL",
+          "value": "claude-sonnet-5-5"
+        },
+        {
+          "name": "INFOGEN_OUTPUT_BUCKET",
+          "value": "storystudio-unified-storage-prod"
+        },
+        {
+          "name": "INFOGEN_OUTPUT_BASE_URL",
+          "value": "https://cdn-v2.ai-storystudio.com"
+        },
+        {
+          "name": "AWS_DEFAULT_REGION",
+          "value": "us-east-1"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "ANTHROPIC_API_KEY",
+          "valueFrom": "arn:aws:ssm:us-east-1:929075264324:parameter/infogen/ANTHROPIC_API_KEY"
+        },
+        {
+          "name": "GEMINI_API_KEY",
+          "valueFrom": "arn:aws:ssm:us-east-1:929075264324:parameter/infogen/GEMINI_API_KEY"
+        },
+        {
+          "name": "RUNPOD_API_KEY",
+          "valueFrom": "arn:aws:ssm:us-east-1:929075264324:parameter/infogen/RUNPOD_API_KEY"
+        },
+        {
+          "name": "INFOGEN_CALLBACK_SECRET",
+          "valueFrom": "arn:aws:ssm:us-east-1:929075264324:parameter/infogen/INFOGEN_CALLBACK_SECRET"
+        },
+        {
+          "name": "COMFY_API_KEY",
+          "valueFrom": "arn:aws:ssm:us-east-1:929075264324:parameter/infogen/COMFY_API_KEY"
+        }
+      ],
+      "mountPoints": [
+        {
+          "sourceVolume": "runs",
+          "containerPath": "/data/runs"
+        },
+        {
+          "sourceVolume": "claude",
+          "containerPath": "/data/claude"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/infogen",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "worker"
+        }
+      }
+    }
   ],
-  "tags": [{"key": "Purpose", "value": "infogen"}]
+  "volumes": [
+    {
+      "name": "runs",
+      "efsVolumeConfiguration": {
+        "fileSystemId": "fs-0008270b3326f89b3",
+        "transitEncryption": "ENABLED",
+        "authorizationConfig": {
+          "accessPointId": "fsap-08f4466373d8efe00",
+          "iam": "ENABLED"
+        }
+      }
+    },
+    {
+      "name": "claude",
+      "efsVolumeConfiguration": {
+        "fileSystemId": "fs-0008270b3326f89b3",
+        "transitEncryption": "ENABLED",
+        "authorizationConfig": {
+          "accessPointId": "fsap-0e8612ac8e6aabe11",
+          "iam": "ENABLED"
+        }
+      }
+    }
+  ],
+  "tags": [
+    {
+      "key": "Purpose",
+      "value": "infogen"
+    }
+  ]
 }
