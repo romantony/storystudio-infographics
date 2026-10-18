@@ -55,6 +55,10 @@
         {
           "name": "AWS_DEFAULT_REGION",
           "value": "us-east-1"
+        },
+        {
+          "name": "PYTHONUNBUFFERED",
+          "value": "1"
         }
       ],
       "secrets": [

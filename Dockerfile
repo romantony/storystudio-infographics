@@ -63,7 +63,7 @@ USER infogen
 RUN cd /app/remotion && npx remotion bundle src/index.ts --out-dir bundle --log=error \
  && cd /app && PYTHONPATH=/app python3 -m infogen sfx --out /app/sfx
 WORKDIR /data/runs
-ENV HOME=/home/infogen DISPLAY=:1 BROWSER=firefox PYTHONPATH=/app INFOGEN_APP=/app INFOGEN_SFX_DIR=/app/sfx \
+ENV HOME=/home/infogen DISPLAY=:1 BROWSER=firefox PYTHONPATH=/app PYTHONUNBUFFERED=1 INFOGEN_APP=/app INFOGEN_SFX_DIR=/app/sfx \
     CLAUDE_CONFIG_DIR=/data/claude INFOGEN_GEOMETRY=1600x900 INFOGEN_RUNS_DIR=/data/runs INFOGEN_IMAGE=infogen:${GIT_SHA}
 EXPOSE 6080 8080
 ENTRYPOINT ["infogen-entrypoint"]
