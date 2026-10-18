@@ -117,6 +117,20 @@ def upload_review(j):
     if failed: S.update(sp, warn=["Review files not uploaded: " + ", ".join(failed)])
     return True
 
+def upload_missing_outputs(j):
+    """On success, upload every registered output that has no url yet. The Claude run is told to register its outputs and then
+    run `upload`; done in the other order, the outputs stay in the run folder with no url and the caller gets a finished job with
+    nothing to show (first seen 2026-10-18, the Berlin Airlift job). Failures become warnings, exactly as in `upload`."""
+    a = S.read(os.path.join(V.jdir(j), "status.json"))
+    if not os.environ.get("INFOGEN_OUTPUT_BUCKET") or all(o.get("url") or o.get("key") for o in a.get("outputs", [])): return False
+    from infogen import upload
+    prefix = V.jread(j, "request.json", {}).get("output", {}).get("prefix") or f"infogen/{j}/"
+    cwd = os.getcwd(); os.chdir(V.jdir(j))   # output paths in status.json are relative to the run folder
+    try: upload.main("upload", ["--prefix", prefix])
+    except SystemExit: pass                  # upload exits 1 after recording what failed as a warning
+    finally: os.chdir(cwd)
+    return True
+
 def drain_hooks():
     t = threading.Thread(target=V.HOOKS.join, daemon=True); t.start(); t.join(HOOK_DRAIN_S)
     if t.is_alive(): print("webhooks still undelivered after", HOOK_DRAIN_S, "s", flush=True)
@@ -127,6 +141,8 @@ def main():
     j, running = (start(), True) if "request" in PAYLOAD else resume()
     if running: V.watch(j)
     if V.jread(j, "state.json", {}).get("state") == "awaiting_input" and upload_review(j): V.emit(j, "status.updated")
+    # No webhook for this: job.succeeded stays the last event; the URLs reach the caller in the task output below.
+    if V.jread(j, "state.json", {}).get("state") == "succeeded": upload_missing_outputs(j)
     drain_hooks(); stop.set()
     out = V.public(j); ok = out["state"] != "failed"
     report(ok, out)

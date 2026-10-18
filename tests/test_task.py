@@ -76,6 +76,8 @@ try:
     rc, r = task("tok-3", job_id=j, response={"checkpoint_id": "cp_final", "action": "approve"})
     s = r["result"]
     check("succeeded with outputs", rc == 0 and s["state"] == "succeeded" and s["outputs"][0]["kind"] == "long_video", r)
+    check("outputs the run registered but never uploaded are uploaded before reporting",
+          s["outputs"][0].get("url") == "https://cdn.example/infogen/t1/out/mock.mp4" and any(p.endswith("/infogen/t1/out/mock.mp4") for p in s3_puts), (s["outputs"], s3_puts))
 
     ev = sorted((e for e in got if e["job_id"] == j), key=lambda e: e["seq"])
     seqs = [e["seq"] for e in ev if e["event"] != "job.heartbeat"]
@@ -84,7 +86,7 @@ try:
     check("checkpoint webhooks sent", sum(e["event"] == "checkpoint.awaiting_input" for e in ev) == 3, [e["event"] for e in ev])
 
     rc, r = task(request=dict(base, request_id="t2", review_mode="auto"))
-    check("auto mode runs to the end in one task", rc == 0 and r["result"]["state"] == "succeeded", r)
+    check("auto mode runs to the end in one task", rc == 0 and r["result"]["state"] == "succeeded" and r["result"]["outputs"][0].get("url"), r)
     rc, r = task("tok-f", request=dict(base, request_id="t3", topic="FAIL please"))
     fail = [c for n, c in sfn_calls if n == "SendTaskFailure" and c["taskToken"] == "tok-f"]
     check("failure reported with SendTaskFailure and the error code", rc == 1 and not r["ok"] and fail and fail[-1]["error"] == "generation_failed", (r, fail))
