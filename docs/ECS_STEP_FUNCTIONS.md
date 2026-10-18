@@ -43,8 +43,10 @@ Container overrides:
 
 Result:
 
-- `SendTaskSuccess`, output = the status object. `state` is `awaiting_input` (then `awaiting.checkpoint_id`, `awaiting.question`,
-  `awaiting.review` say what to show the reviewer), `succeeded` (with `outputs` and `costs`) or `cancelled` (after `abort`).
+- `SendTaskSuccess`, output = the status object. `state` is `awaiting_input` (then `awaiting.checkpoint_id`, `awaiting.question`
+  and `awaiting.review_files` say what to show the reviewer; the task copies those files to the output bucket under
+  `<prefix>review/<checkpoint_id>/` and lists them in `awaiting.review_urls` as `{path, bucket, key, url}`, because the run folder
+  on EFS is out of the reviewer's reach), `succeeded` (with `outputs` and `costs`) or `cancelled` (after `abort`).
 - `SendTaskFailure`, `error` = the error code (`invalid_request`, `duplicate_request`, `not_found`, `not_awaiting_input`,
   `wrong_checkpoint`, `not_ready`, `generation_failed`, `llm_error`, `timeout`, `internal`), `cause` = the status object as JSON.
 - `SendTaskHeartbeat` every 60 s. Set `HeartbeatSeconds` (for example 600) so a task that dies without reporting

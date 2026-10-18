@@ -3,8 +3,8 @@ one task per run, the job folder shared between tasks, results through SendTaskS
 Step Functions API, webhooks to a local receiver. Spends nothing. Run: .venv/bin/python tests/test_task.py"""
 import hashlib, hmac, http.server, json, os, shutil, subprocess, sys, tempfile, threading
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SECRET, HOOK, SFN = "hook-secret", 18091, 18092
-got, bad_sig, sfn_calls = [], [], []
+SECRET, HOOK, SFN, S3 = "hook-secret", 18091, 18092, 18093
+got, bad_sig, sfn_calls, s3_puts = [], [], [], []
 class Hook(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         raw = self.rfile.read(int(self.headers["Content-Length"]))
@@ -19,11 +19,18 @@ class Sfn(http.server.BaseHTTPRequestHandler):
         sfn_calls.append((self.headers.get("X-Amz-Target", "").split(".")[-1], json.loads(raw)))
         self.send_response(200); self.send_header("Content-Type", "application/x-amz-json-1.0"); self.end_headers(); self.wfile.write(b"{}")
     def log_message(self, *a): pass
-for port, h in ((HOOK, Hook), (SFN, Sfn)): threading.Thread(target=http.server.HTTPServer(("127.0.0.1", port), h).serve_forever, daemon=True).start()
+class FakeS3(http.server.BaseHTTPRequestHandler):
+    """Accepts PutObject and records the path."""
+    def do_PUT(self):
+        self.rfile.read(int(self.headers.get("Content-Length") or 0)); s3_puts.append(self.path)
+        self.send_response(200); self.send_header("ETag", '"x"'); self.end_headers()
+    def log_message(self, *a): pass
+for port, h in ((HOOK, Hook), (SFN, Sfn), (S3, FakeS3)): threading.Thread(target=http.server.HTTPServer(("127.0.0.1", port), h).serve_forever, daemon=True).start()
 runs = tempfile.mkdtemp()
 env = dict(os.environ, INFOGEN_CALLBACK_SECRET=SECRET, INFOGEN_RUNS_DIR=runs, INFOGEN_RUNNER="mock", INFOGEN_APP=ROOT, INFOGEN_HEARTBEAT_S="0.5",
            INFOGEN_MOCK_STEP_S="0.3", INFOGEN_ALLOW_HTTP_CALLBACK="1", GEMINI_API_KEY="x", RUNPOD_API_KEY="x", COMFY_API_KEY="x",
-           AWS_ENDPOINT_URL_SFN=f"http://127.0.0.1:{SFN}", AWS_ACCESS_KEY_ID="test", AWS_SECRET_ACCESS_KEY="test", AWS_DEFAULT_REGION="us-east-1")
+           AWS_ENDPOINT_URL_SFN=f"http://127.0.0.1:{SFN}", AWS_ACCESS_KEY_ID="test", AWS_SECRET_ACCESS_KEY="test", AWS_DEFAULT_REGION="us-east-1",
+           INFOGEN_OUTPUT_BUCKET="test-bucket", INFOGEN_OUTPUT_BASE_URL="https://cdn.example", INFOGEN_S3_ENDPOINT=f"http://127.0.0.1:{S3}")
 env.pop("INFOGEN_API_TOKEN", None)
 def task(token=None, **kv):
     """One ECS task. Returns (exit code, the reported result)."""
@@ -48,6 +55,9 @@ try:
     succ = [c for n, c in sfn_calls if n == "SendTaskSuccess"]
     check("SendTaskSuccess carries the token and the status object", succ and succ[-1]["taskToken"] == "tok-1" and json.loads(succ[-1]["output"])["job_id"] == j, sfn_calls)
     check("task heartbeats sent", any(n == "SendTaskHeartbeat" and c["taskToken"] == "tok-1" for n, c in sfn_calls), sfn_calls)
+    ru = s["awaiting"].get("review_urls") or []
+    check("review files uploaded and listed at the checkpoint", ru and ru[0]["url"] == "https://cdn.example/infogen/t1/review/cp_script/request.json"
+          and any(p.endswith("/infogen/t1/review/cp_script/request.json") for p in s3_puts), (ru, s3_puts))
     check("style.json written", json.load(open(os.path.join(runs, j, "style.json")))["cast"] == {"hero": "a man in a red cap"})
 
     rc, r = task(request=dict(base, request_id="t1"))

@@ -93,6 +93,30 @@ def resume():
     V.spawn(j, text, resume=True); V.emit(j, "status.updated")
     return j, True
 
+def upload_review(j):
+    """At a checkpoint, copy the files the reviewer is asked to look at (awaiting.review_files, inside the run folder) to the
+    output bucket under <prefix>review/<checkpoint>/ and list them as awaiting.review_urls: the run folder is on EFS, out of the
+    reviewer's reach. A failed upload becomes a warning; the checkpoint is raised either way."""
+    sp = os.path.join(V.jdir(j), "status.json"); a = S.read(sp); aw = a.get("awaiting") or {}
+    bucket = os.environ.get("INFOGEN_OUTPUT_BUCKET"); base = (os.environ.get("INFOGEN_OUTPUT_BASE_URL") or "").rstrip("/")
+    if not aw.get("review_files") or not bucket: return False
+    import boto3
+    from urllib.parse import quote
+    from infogen.upload import TYPES
+    s3 = boto3.client("s3", endpoint_url=os.environ.get("INFOGEN_S3_ENDPOINT") or None)
+    prefix = V.jread(j, "request.json", {}).get("output", {}).get("prefix") or f"infogen/{j}/"
+    root = os.path.realpath(V.jdir(j)); urls, failed = [], []
+    for rel in aw["review_files"]:
+        p = os.path.realpath(os.path.join(root, rel))
+        if not p.startswith(root + os.sep) or not os.path.isfile(p): failed.append(f"{rel} (missing)"); continue
+        k = f"{prefix.strip('/')}/review/{aw['checkpoint_id']}/{os.path.relpath(p, root)}"
+        try: s3.upload_file(p, bucket, k, ExtraArgs={"ContentType": TYPES.get(os.path.splitext(p)[1].lower(), "application/octet-stream")})
+        except Exception as e: failed.append(f"{rel} ({type(e).__name__})"); continue
+        urls.append({"path": rel, "bucket": bucket, "key": k, **({"url": base + "/" + quote(k)} if base else {})})
+    a = S.read(sp); a["awaiting"]["review_urls"] = urls; S.write(a, sp)
+    if failed: S.update(sp, warn=["Review files not uploaded: " + ", ".join(failed)])
+    return True
+
 def drain_hooks():
     t = threading.Thread(target=V.HOOKS.join, daemon=True); t.start(); t.join(HOOK_DRAIN_S)
     if t.is_alive(): print("webhooks still undelivered after", HOOK_DRAIN_S, "s", flush=True)
@@ -102,6 +126,7 @@ def main():
     if "request" not in PAYLOAD and "job_id" not in PAYLOAD: fail_early("invalid_request", "PAYLOAD_JSON needs a request (start) or a job_id and response (resume)")
     j, running = (start(), True) if "request" in PAYLOAD else resume()
     if running: V.watch(j)
+    if V.jread(j, "state.json", {}).get("state") == "awaiting_input" and upload_review(j): V.emit(j, "status.updated")
     drain_hooks(); stop.set()
     out = V.public(j); ok = out["state"] != "failed"
     report(ok, out)
