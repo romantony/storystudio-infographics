@@ -55,6 +55,12 @@ POST /v1/infographics
 | `visuals.characters` / `objects` / `backgrounds` | references the frames are composed from (0 to 20 each) | 8 / 8 / 8 |
 | `visuals.animated_max_pct` / `animated_clips` | Wan2.2 animation (5 s clips) cap: share of the frames (0 to 40) and absolute ceiling on attempts (0 to 30) | 20 / 18 |
 | `visuals.ltx_clips` | LTX 2.3 hero shots (10 s clips at 720p), attempts included (0 to 10) | 0 |
+| `thumbnail.style` | `cinematic_infographic`, `epic_historical`, `superhero_showdown`, `mystery_discovery`, `economic_explainer`, or `auto` (Claude chooses) | `cinematic_infographic` |
+| `thumbnail.candidates` | candidates per thumbnail (1 to 4); the Thumbnail Analyst scores them and the best one at 80 or more is used | 3 |
+| `thumbnail.text` | the long video's exact headline (up to 32 characters); Claude writes 2 to 5 words when it is missing | — |
+| `thumbnail.text_mode` | `overlay`: Nano Banana 2.1 draws the picture and infogen typesets the headline exactly; `model`: the image model draws the text and the analyst checks it | `overlay` |
+| `thumbnail.shorts` / `shorts_cover` | a 9:16 thumbnail for every Short / put it into the Short as a 1 s cover frame at the end | `true` / `true` |
+| `thumbnail.resolution` | `1K`, `2K`, `4K` (generation size; exported at 1280×720 and 1080×1920, under 2 MB) | `2K` |
 
 The server writes `request.json` and `style.json` (from `visuals.style`, `palette`, `cast`) into the run folder before the Claude run starts.
 

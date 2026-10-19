@@ -81,6 +81,10 @@
         {
           "name": "COMFY_API_KEY",
           "valueFrom": "arn:aws:ssm:us-east-1:929075264324:parameter/infogen/COMFY_API_KEY"
+        },
+        {
+          "name": "KIE_API_KEY",
+          "valueFrom": "arn:aws:ssm:us-east-1:929075264324:parameter/infogen/KIE_API_KEY"
         }
       ],
       "mountPoints": [

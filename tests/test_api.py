@@ -88,6 +88,11 @@ try:
     if c == 202: st1 = json.load(open(os.path.join(runs, b["job_id"], "style.json"))); wait_state(b["job_id"], ["succeeded", "failed"])
     check("style auto: the style is left to choose, the fixed colour kept, the palette not chosen", c == 202 and st1["preset"] == "auto"
           and st1["choose"] == {"style": True, "palette": False} and st1["palette"] == {"accent": "#FF0000"}, (c, b, st1))
+    th = json.load(open(os.path.join(runs, j, "request.json")))["thumbnail"]
+    check("thumbnail defaults: cinematic infographic, 3 candidates, exact overlay, Shorts and cover frames", th == {"style": "cinematic_infographic", "candidates": 3, "text": None,
+          "text_mode": "overlay", "shorts": True, "shorts_cover": True, "resolution": "2K"}, th)
+    c, b = call("POST", "/v1/infographics", dict(base, request_id="th1", thumbnail={"style": "neon", "candidates": 9, "text": "x" * 40}))
+    check("thumbnail: unknown style, too many candidates, too long a headline are 400", c == 400, b)
     c, b = call("POST", "/v1/infographics", dict(base, request_id="st2", visuals={"palette": {"glow": "#FFFFFF"}}))
     check("palette: an unknown colour is a 400", c == 400 and "glow" in json.dumps(b), b)
     for secs, want in ((300, 202), (900, 202), (450, 400), (1800, 400)):

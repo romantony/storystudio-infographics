@@ -19,7 +19,8 @@ Everything runs from the run folder with `python3 -m infogen <command>`. Each co
 | `validate` | Check a script before anything is paid for: types, fields, cues, sources, pacing, length, assets. |
 | `tts`, `timings` | Narration (Gemini TTS) and Whisper word timings, per scene, for the long video or `--short <id>`. |
 | `build` | Lay out, `--stills` (contact sheet of every scene), `--preview` (half size) or `--run` (final) the long video, or a Short with `--short <id>`. |
-| `thumb` | Thumbnail from an illustration, a cut-out and 1 to 3 lines of text. |
+| `thumbnail` | Cinematic thumbnails for the long video and every Short: plan, generate (Nano Banana 2.1), score, select, cover frame. |
+| `thumb` | Fallback thumbnail from an illustration, a cut-out and 1 to 3 lines of text. |
 | `metadata` | Metadata and credits files from a `meta.json` you write. |
 | `sheet` | Contact sheets of images (`--assets`) or video frames (`--video`), so you can look at them with the Read tool. |
 | `upload` | Copy finished outputs to the output bucket. |
@@ -30,7 +31,7 @@ You also have WebSearch and WebFetch for research.
 
 ## Reporting
 
-Call `python3 -m infogen status --stage <stage> --message "<one plain sentence>"` when you start each stage, and again when something worth knowing happens inside a long stage. Stages, in order: `setup`, `script`, `assets_queued`, `assets_ready`, `narration`, `timings`, `build_long`, `build_shorts`, `metadata`, `upload_outputs`. Use `--next "<step>"` (repeatable) to say what comes next, `--warn "<text>"` for anything the reviewer must know, `--output kind=path` for each finished file (kinds: `long_video`, `short`, `thumbnail`, `metadata`, `shorts_metadata`, `credits`), and `--cost name=count` for paid generations (for example `--cost images=31 --cost ltx_clips=2`).
+Call `python3 -m infogen status --stage <stage> --message "<one plain sentence>"` when you start each stage, and again when something worth knowing happens inside a long stage. Stages, in order: `setup`, `script`, `assets_queued`, `assets_ready`, `narration`, `timings`, `build_long`, `build_shorts`, `metadata`, `upload_outputs`. Use `--next "<step>"` (repeatable) to say what comes next, `--warn "<text>"` for anything the reviewer must know, `--output kind=path` for each finished file (kinds: `long_video`, `short`, `thumbnail`, `short_thumbnail`, `metadata`, `shorts_metadata`, `credits`), and `--cost name=count` for paid generations (for example `--cost images=31 --cost ltx_clips=2`).
 
 Write messages for someone who has not seen this session: what was produced and in what quantity ("Long script written: 74 scenes, 1,540 words, 9 charts, 4 maps"), and say plainly when something is weak or failed.
 
@@ -209,9 +210,31 @@ Check each cut-out on the sheet: a character missing parts or with a background 
 
 **Build.** Run `build --stills` and open `build/stills_<slug>.jpg`. Check that every scene shows what its narration says, labels are spelled correctly and fit, nothing important is hidden under the time badge or off screen, maps frame the right place, and charts read at a glance. Fix and run `--stills` again (only changed scenes re-render). Then `build --run`. Do the same for each Short with `--short <id>`. Finally make frame sheets with `sheet --video out/<slug>.mp4 --n 24` and `--vertical` for Shorts and look at them.
 
-**Thumbnail.** Make two or three variants with `thumb` (different `--out`): the strongest illustration or a character cut-out with a clear emotion, two to four words of text that add to the title rather than repeat it. Open them, pick one as `thumb/thumbnail.jpg`, and mention the alternatives in a warning so the reviewer can choose.
+**Thumbnails: the long video and every Short.** Follow the StoryStudio thumbnail guidelines (`/app/infogen/thumbnail.py` has the formats). A thumbnail tells the video's story in about one second at phone size. It has five layers:
+- a contextual cinematic background, kept subordinate;
+- one dominant hero subject (35–50% of the storytelling area);
+- 1–3 smaller supporting elements;
+- an oversized dimensional headline of 2–5 words;
+- restrained cinematic effects.
 
-**Metadata.** Write `meta.json` and run `metadata`. Titles: under 70 characters, a specific promise, no clickbait the video does not pay off (patterns that fit the format: "What If ... (Day by Day)", "... Hour by Hour", "... vs ...: Who Would Win?", "What Happens to Your Body When ...", "Why ... Is Collapsing"). The description must say what is AI-generated and keep the `{sources}` list. When the request's `series` gives a `playlist_url`, a `previous_episode_title` (with `previous_episode_url`) or a `next_episode_title`, link the playlist and the previous episode and name the next one in the description, so no placeholder is left. Then register every finished file with `status --output`, including `qa_report=review/qa.md` and `research_report=review/research.md`, and run `upload --prefix <output.prefix>`. If the upload fails, try once more, and if it still fails say so in a warning.
+Pictures come from Nano Banana 2.1 on KIE, and the headline is typeset exactly on top of them (`thumbnail.text_mode` `overlay`, the default).
+1. **Plan:** write `thumb/plan.json` with one target `long` (16:9) and one per Short (9:16). For each target:
+   - the story it tells, the hero `subject`, the `secondary` elements and the `background`;
+   - the exact headline `text`, split into `lines`, with the number or key word as `emphasis`. Use `thumbnail.text` from the request for the long video when it is set. Otherwise write 2–5 words that add to the title rather than repeat it, a striking number from the sources where there is one ("12,941 TONS", "90 DAYS").
+   - `placement` (16:9), `colors`, `accent`, the `refs` (the references and frames of people, machines and places that appear, so the thumbnail matches the video) and the `facts` (visual-facts ids).
+
+   Give every Short its own angle: hook, stat or twist. Choose the `preset` (`python3 -m infogen thumbnail presets`) when `thumbnail.style` is `"auto"`; otherwise use the request's. Run `python3 -m infogen thumbnail check` and fix every error.
+2. **Generate:** `python3 -m infogen thumbnail generate`. It makes `thumbnail.candidates` per target (default 3) and sets each headline. This takes a few minutes, so run it in the background.
+3. **Score:** run `python3 -m infogen analyst thumbnail` in the background and wait for `review/thumbnail.json`. The Thumbnail Analyst opens every candidate and scores it.
+4. **Pick:** `python3 -m infogen thumbnail select`. It takes the best candidate per target that has the exact text, is accurate and scores at least 80.
+   - If a target falls short, revise its plan from the analyst's findings and run `thumbnail generate --only <id> --more 3`, then score and select again.
+   - After two such rounds, run `thumbnail select --accept-best` and say so in a warning.
+5. **Insert:** after the Shorts are built, put each Short's thumbnail into it as a cover frame with `python3 -m infogen thumbnail cover --short <id>` (when `thumbnail.shorts_cover`). YouTube Shorts take their thumbnail from a frame.
+6. **Report:** look at the chosen thumbnails yourself. Record `--cost thumbnail_images=<generated>`, and name the alternatives in `thumb/selection.json` in a warning.
+
+If `KIE_API_KEY` is not set (`generate` says so), fall back to `thumb`: two or three variants with the strongest illustration or a cut-out with a clear emotion and two to four words of text. Pick one as `thumb/thumbnail.jpg`, and warn that the cinematic thumbnails were skipped.
+
+**Metadata.** Write `meta.json` and run `metadata`. Titles: under 70 characters, a specific promise, no clickbait the video does not pay off (patterns that fit the format: "What If ... (Day by Day)", "... Hour by Hour", "... vs ...: Who Would Win?", "What Happens to Your Body When ...", "Why ... Is Collapsing"). The description must say what is AI-generated and keep the `{sources}` list. When the request's `series` gives a `playlist_url`, a `previous_episode_title` (with `previous_episode_url`) or a `next_episode_title`, link the playlist and the previous episode and name the next one in the description, so no placeholder is left. Then register every finished file with `status --output`, including `thumbnail=thumb/thumbnail.jpg`, `short_thumbnail=shorts/<id>/thumb/thumbnail.jpg` for each Short, `qa_report=review/qa.md` and `research_report=review/research.md`, and run `upload --prefix <output.prefix>`. If the upload fails, try once more, and if it still fails say so in a warning.
 
 ## Things you cannot do, and must say
 

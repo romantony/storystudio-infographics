@@ -1,6 +1,7 @@
 import React from 'react';
 import {Composition} from 'remotion';
 import {Scene} from './Scene';
+import {Cover} from './Cover';
 import {Thumb} from './Thumb';
 import {SceneProps} from './theme';
 
@@ -13,6 +14,8 @@ export const Root: React.FC = () => (
   <>
     <Composition id="Scene" component={Scene as any} defaultProps={demo} width={1920} height={1080} fps={30} durationInFrames={180} calculateMetadata={meta} />
     <Composition id="Thumb" component={Thumb as any} defaultProps={{type: 'thumb', width: 1280, height: 720, fps: 30, seconds: 1}}
+      width={1280} height={720} fps={30} durationInFrames={30} calculateMetadata={meta} />
+    <Composition id="Cover" component={Cover as any} defaultProps={{type: 'cover', width: 1280, height: 720, fps: 30, seconds: 1}}
       width={1280} height={720} fps={30} durationInFrames={30} calculateMetadata={meta} />
   </>
 );

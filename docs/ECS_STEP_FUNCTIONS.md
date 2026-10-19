@@ -24,7 +24,7 @@ continuing across tasks; each task waits until its webhooks are delivered before
 Network: the default VPC's public subnets with `AssignPublicIp: ENABLED`, like the other StoryStudio tasks. Outbound access is
 needed for Anthropic, WebSearch/WebFetch, Gemini, RunPod, ComfyUI, ECR, SSM, S3, Step Functions and the webhook URL.
 
-Secrets (task definition `secrets`, from SSM): `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `RUNPOD_API_KEY`, `COMFY_API_KEY`,
+Secrets (task definition `secrets`, from SSM): `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `RUNPOD_API_KEY`, `COMFY_API_KEY`, `KIE_API_KEY` (cinematic thumbnails; register this only once `/infogen/KIE_API_KEY` exists, or tasks fail to start),
 `INFOGEN_CALLBACK_SECRET`. Plain environment: `INFOGEN_OUTPUT_BUCKET=storystudio-unified-storage-prod`,
 `INFOGEN_OUTPUT_BASE_URL=https://cdn-v2.ai-storystudio.com`, `ANTHROPIC_MODEL=claude-sonnet-5-5`, `INFOGEN_RUNNER=claude`.
 `INFOGEN_API_TOKEN`, `INFOGEN_ORIGIN_SECRET` and `VNC_PASSWORD` are not used on ECS.

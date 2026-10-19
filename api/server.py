@@ -61,6 +61,14 @@ class Visuals(BaseModel):
     animated_clips: int = Field(18, ge=0, le=30)       # absolute ceiling on animation attempts, retries included
     charts: bool = True; maps: bool = True
     captions_long: bool = False; captions_shorts: bool = True
+class Thumbnail(BaseModel):   # cinematic thumbnails (infogen/thumbnail.py): Nano Banana 2.1 on KIE, the headline typeset exactly
+    style: Literal["cinematic_infographic", "epic_historical", "superhero_showdown", "mystery_discovery", "economic_explainer", "auto"] = "cinematic_infographic"
+    candidates: int = Field(3, ge=1, le=4)              # per thumbnail; the Thumbnail Analyst scores them and the best is used
+    text: Optional[str] = Field(None, min_length=1, max_length=32)   # the long video's exact headline; default: Claude writes 2-5 words
+    text_mode: Literal["overlay", "model"] = "overlay"  # overlay: typeset exactly by infogen; model: drawn by the image model, then checked
+    shorts: bool = True                                 # a 9:16 thumbnail for every Short
+    shorts_cover: bool = True                           # and put it into the Short as a cover frame
+    resolution: Literal["1K", "2K", "4K"] = "2K"
 class Limits(BaseModel):
     max_runtime_minutes: int = Field(180, ge=30, le=360); max_llm_turns: int = Field(500, ge=20, le=2000)
 class Output(BaseModel):
@@ -80,7 +88,7 @@ class Req(BaseModel):
     request_id: str = Field(..., min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
     topic: str = Field(..., min_length=1, max_length=200); synopsis: str = Field(..., min_length=1, max_length=2000)
     format: FORMATS = "explainer"
-    kind: Literal["video", "series_plan"] = "video"; series_plan: SeriesPlan = SeriesPlan()
+    kind: Literal["video", "series_plan"] = "video"; series_plan: SeriesPlan = SeriesPlan(); thumbnail: Thumbnail = Thumbnail()
     series: Series = Series(); long: Long = Long(); shorts: Shorts = Shorts(); visuals: Visuals = Visuals()
     review_mode: Literal["checkpoints", "auto"] = "checkpoints"; model: str = "claude-sonnet-5-5"
     limits: Limits = Limits(); output: Output = Output(); callback: Callback
@@ -238,7 +246,7 @@ def start_prompt(req):
 APP = os.environ.get("INFOGEN_APP", "/app")
 def checks():
     c = {}
-    for name, env in (("anthropic", "ANTHROPIC_API_KEY"), ("gemini", "GEMINI_API_KEY"), ("runpod", "RUNPOD_API_KEY"), ("comfy", "COMFY_API_KEY")):
+    for name, env in (("anthropic", "ANTHROPIC_API_KEY"), ("gemini", "GEMINI_API_KEY"), ("runpod", "RUNPOD_API_KEY"), ("comfy", "COMFY_API_KEY"), ("kie", "KIE_API_KEY")):
         c[name] = "set" if os.environ.get(env) else "missing"     # presence only; validity shows up when a job uses the key
     c["callback_secret"] = "set" if SECRET else "missing"
     c["templates"] = "ready" if os.path.isfile(os.path.join(os.environ.get("INFOGEN_REMOTION") or os.path.join(APP, "remotion"), "bundle", "index.html")) else "missing"

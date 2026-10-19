@@ -1,7 +1,7 @@
 """The Quality Analyst and the Research Analyst: independent reviews of a run's work against rubrics that improve after
 every run.
 
-python3 -m infogen analyst qa|research [--verify]
+python3 -m infogen analyst qa|research|thumbnail [--verify]
     Runs the analyst as its own Claude session, with read-only tools (the Research Analyst also has WebSearch and
     WebFetch to spot-check facts), on what this job has written: for a video, the scripts, the visual plan, the sources
     and the visual facts; for a series plan (request kind "series_plan"), series/series.json and series/research.md.
@@ -14,7 +14,8 @@ python3 -m infogen rubric show [script|research|series ...]
 
 Rubrics: <INFOGEN_RUBRICS_DIR>/<name>.json (default <INFOGEN_RUNS_DIR>/_rubrics, on the shared volume), seeded from
 rubrics/<name>.json in the app. Which rubric an analyst uses:
-    qa on a video -> script;  research on a video -> research;  either on a series plan -> series.
+    qa on a video -> script;  research on a video -> research;  either on a series plan -> series;
+    thumbnail (the Thumbnail Analyst: scores every candidate in thumb/candidates, see infogen/thumbnail.py) -> thumbnail.
 A rubric is a list of criteria {id, area, check, why, weight, status, source, checked, failed, last_failed}. After a
 first pass, each scored criterion counts the check (and the failure); each proposed guideline that is new becomes an
 active criterion with weight 1 and this job as its source. Over MAX_ACTIVE active criteria, the ones that have been checked
@@ -26,7 +27,7 @@ import fcntl, json, os, re, shutil, subprocess, sys, time
 from contextlib import contextmanager
 from .common import APP, mkdirs
 
-ROLES = {"qa": "Quality Analyst", "research": "Research Analyst"}
+ROLES = {"qa": "Quality Analyst", "research": "Research Analyst", "thumbnail": "Thumbnail Analyst"}
 SEVERITIES = ("must_fix", "should_fix", "suggestion")
 MAX_ACTIVE = 40
 RETIRE_AFTER = 10   # checks without a single failure before a criterion may be retired
@@ -35,13 +36,16 @@ INPUTS = {   # what each analyst reads, by request kind; globs are expanded in t
     ("research", "video"): ["request.json", "research/sources.md", "research/visual_facts.json", "script/script.json", "plan/visual_plan.json"],
     ("qa", "series_plan"): ["request.json", "series/series.json", "series/research.md"],
     ("research", "series_plan"): ["request.json", "series/series.json", "series/research.md"],
+    ("thumbnail", "video"): ["request.json", "thumb/plan.json", "research/visual_facts.json", "thumb/candidates/*.jpg"],   # images: read each one
 }
 
 def rubrics_dir():
     # inside the runs volume: on ECS only /data/runs is on EFS, and pruning only touches the job folders in index.json
     return os.environ.get("INFOGEN_RUBRICS_DIR") or os.path.join(os.environ.get("INFOGEN_RUNS_DIR", "/data/runs"), "_rubrics")
 
-def rubric_name(role, kind): return "series" if kind == "series_plan" else ("script" if role == "qa" else "research")
+def rubric_name(role, kind):
+    if role == "thumbnail": return "thumbnail"
+    return "series" if kind == "series_plan" else ("script" if role == "qa" else "research")
 
 @contextmanager
 def locked():
@@ -99,7 +103,7 @@ def record(name, result, job):
 
 def gather(role, kind):
     import glob
-    files = [p for pat in INPUTS[(role, kind)] for p in sorted(glob.glob(pat))]
+    files = [p for pat in INPUTS.get((role, kind)) or INPUTS[(role, "video")] for p in sorted(glob.glob(pat))]
     return files
 
 def prompt(role, kind, rubric, files, verify):
