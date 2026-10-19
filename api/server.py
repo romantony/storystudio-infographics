@@ -5,10 +5,10 @@ Env: INFOGEN_API_TOKEN (required), INFOGEN_CALLBACK_SECRET, INFOGEN_RUNS_DIR (/d
      INFOGEN_IMAGE, INFOGEN_ORIGIN_SECRET (CloudFront origin header), INFOGEN_PROMPT (/app/prompts/produce.md), INFOGEN_CLAUDE_FLAGS, INFOGEN_HEARTBEAT_S (60),
      INFOGEN_KEEP_RUNS (3: full run folders kept for the newest finished jobs)"""
 import hashlib, hmac, json, os, queue, re, shlex, shutil, signal, subprocess, sys, threading, time, urllib.request, uuid
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Literal, Optional, Union
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from infogen import status as S
@@ -19,6 +19,7 @@ SECRET = os.environ.get("INFOGEN_CALLBACK_SECRET", "")
 RUNNER = os.environ.get("INFOGEN_RUNNER", "claude")
 IMAGE = os.environ.get("INFOGEN_IMAGE", "infogen:dev")
 PROMPT = os.environ.get("INFOGEN_PROMPT") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "prompts", "produce.md")
+SERIES_PROMPT = os.environ.get("INFOGEN_SERIES_PROMPT") or os.path.join(os.path.dirname(PROMPT), "plan_series.md")
 HEARTBEAT = float(os.environ.get("INFOGEN_HEARTBEAT_S", "60"))
 CLAUDE_FLAGS = os.environ.get("INFOGEN_CLAUDE_FLAGS", "--permission-mode acceptEdits --allowedTools Bash Read Write Edit Glob Grep WebSearch WebFetch")
 RETRY = [float(x) for x in os.environ.get("INFOGEN_WEBHOOK_RETRY_S", "5,15,60,180,300").split(",")]
@@ -28,26 +29,28 @@ BOOT = time.time(); LAST_CALL = [time.time()]
 os.makedirs(RUNS, exist_ok=True)
 
 # ---------- request model ----------
+DATE = r"^\d{4}-\d{2}-\d{2}$"
 FORMATS = Literal["explainer", "what_if", "hour_by_hour", "day_by_day", "versus", "body", "ranking", "true_story", "compilation"]
 class Series(BaseModel):
     name: Optional[str] = None; episode: Optional[int] = None
     previous_episode_title: Optional[str] = None; previous_episode_url: Optional[str] = None
     next_episode_title: Optional[str] = None; playlist_url: Optional[str] = None
+    publish_date: Optional[str] = Field(None, pattern=DATE)
 class Long(BaseModel):
     enabled: bool = True; aspect: Literal["16:9"] = "16:9"
-    target_seconds: int = Field(600, ge=120, le=1800); narrator_voice: str = "Puck"
+    target_seconds: Literal[300, 600, 900] = 600; narrator_voice: str = "Puck"   # approximate: the script aims for it, nothing cuts at it
 class Shorts(BaseModel):
     count: int = Field(3, ge=0, le=3); aspect: Literal["9:16"] = "9:16"
     angles: List[Literal["hook", "stat", "twist", "myth", "countdown"]] = ["hook", "stat", "twist"]
 class Visuals(BaseModel):
     style: Literal["flat_vector", "noir_vector", "paper"] = "flat_vector"
-    palette: Dict[str, str] = {}                       # overrides of remotion/src/theme.ts keys, e.g. {"accent": "#FFC93C"}
+    palette: Dict[str, Union[str, List[str]]] = {}     # overrides of remotion/src/theme.ts keys, e.g. {"accent": "#FFC93C"}; "series" is a list
     cast: Dict[str, str] = {}                          # recurring characters: id -> fixed visual description
-    illustrations: int = Field(24, ge=0, le=80)        # generated scene images
-    characters: int = Field(6, ge=0, le=20)            # generated character poses (cut out automatically)
+    illustrations: Optional[int] = Field(None, ge=0, le=240)  # frames in the visual plan; default 80 per 10 minutes of the long video (the plan aims for 50-80)
+    characters: int = Field(8, ge=0, le=20)            # character references for the visual plan (cut out automatically)
     objects: int = Field(8, ge=0, le=20)               # object references for the visual plan (vehicles, aircraft, props)
     backgrounds: int = Field(8, ge=0, le=20)           # background references for the visual plan (empty sets)
-    ltx_clips: int = Field(0, ge=0, le=10)             # animated illustrations (ComfyUI LTX), the most expensive item
+    ltx_clips: int = Field(0, ge=0, le=10)             # LTX 2.3 hero shots (10 s clips), the most expensive item
     animated_max_pct: int = Field(20, ge=0, le=40)     # share of the visual plan's frames that may be animated (Wan2.2), a hard cap
     animated_clips: int = Field(18, ge=0, le=30)       # absolute ceiling on animation attempts, retries included
     charts: bool = True; maps: bool = True
@@ -63,13 +66,23 @@ class Callback(BaseModel):
     def https(cls, v):
         if not (v.startswith("https://") or (os.environ.get("INFOGEN_ALLOW_HTTP_CALLBACK") == "1" and v.startswith("http://"))): raise ValueError("callback.url must be https")
         return v
+class SeriesPlan(BaseModel):   # kind "series_plan" only: plan the whole series; each episode is then its own video request
+    episodes: int = Field(12, ge=2, le=30); per_week: int = Field(3, ge=1, le=7)
+    start_date: Optional[str] = Field(None, pattern=DATE)       # first publish date; default the next Monday
+    formats: Optional[List[FORMATS]] = None                     # formats the episodes may use; default all
 class Req(BaseModel):
     request_id: str = Field(..., min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
     topic: str = Field(..., min_length=1, max_length=200); synopsis: str = Field(..., min_length=1, max_length=2000)
     format: FORMATS = "explainer"
+    kind: Literal["video", "series_plan"] = "video"; series_plan: SeriesPlan = SeriesPlan()
     series: Series = Series(); long: Long = Long(); shorts: Shorts = Shorts(); visuals: Visuals = Visuals()
     review_mode: Literal["checkpoints", "auto"] = "checkpoints"; model: str = "claude-sonnet-5-5"
     limits: Limits = Limits(); output: Output = Output(); callback: Callback
+    @model_validator(mode="after")
+    def frame_budget(self):
+        # One frame every 8 to 12 s (1-2 consecutive scenes): 50 to 80 per 10 minutes; the budget is the upper end.
+        if self.visuals.illustrations is None: self.visuals.illustrations = min(240, round(80 * self.long.target_seconds / 600))
+        return self
 class Respond(BaseModel):
     checkpoint_id: str; action: Literal["approve", "revise", "abort"]; instructions: str = ""
 
@@ -206,7 +219,7 @@ def kill(j):
             try: os.killpg(p.pid, signal.SIGKILL)
             except Exception: pass
 def start_prompt(req):
-    return open(PROMPT).read() + "\n\n## This job\n\nThe request is in `request.json` in the current folder. Read it first.\n"
+    return open(SERIES_PROMPT if req.get("kind") == "series_plan" else PROMPT).read() + "\n\n## This job\n\nThe request is in `request.json` in the current folder. Read it first.\n"
 
 # ---------- health ----------
 APP = os.environ.get("INFOGEN_APP", "/app")

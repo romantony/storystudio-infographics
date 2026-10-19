@@ -14,7 +14,7 @@ Everything runs from the run folder with `python3 -m infogen <command>`. Each co
 |---|---|
 | `status` | Report progress. See "Reporting". |
 | `style` | Print the resolved look (palette, art prompts, cast). |
-| `queue` | Generate from one file, resumably: a visual plan (`plan/visual_plan.json`: references drawn from the style anchor, then frames composed from them with Qwen Image Edit), or `assets.json` (music from ACE-Step, optional LTX animations, and single text-to-image pictures). |
+| `queue` | Generate from one file, resumably: a visual plan (`plan/visual_plan.json`: references drawn from the style anchor, then frames composed from them with Qwen Image Edit), or `assets.json` (music from ACE-Step and single text-to-image pictures). |
 | `cutout` | Cut a character out of its plain background again (with another `--tol`). |
 | `validate` | Check a script before anything is paid for: types, fields, cues, sources, pacing, length, assets. |
 | `tts`, `timings` | Narration (Gemini TTS) and Whisper word timings, per scene, for the long video or `--short <id>`. |
@@ -23,6 +23,8 @@ Everything runs from the run folder with `python3 -m infogen <command>`. Each co
 | `metadata` | Metadata and credits files from a `meta.json` you write. |
 | `sheet` | Contact sheets of images (`--assets`) or video frames (`--video`), so you can look at them with the Read tool. |
 | `upload` | Copy finished outputs to the output bucket. |
+| `rubric show` | Print the rubrics the analysts score against, built up by every earlier run. |
+| `analyst` | `analyst research` or `analyst qa`: an independent review of the scripts, plan and research against the rubrics. |
 
 You also have WebSearch and WebFetch for research.
 
@@ -39,7 +41,7 @@ If you cannot finish, run `status --state failed --error-code <generation_failed
 When `review_mode` is `checkpoints`, pause twice by raising a checkpoint and then ending your turn:
 
 - After the scripts are written and validated, and before anything paid is generated:
-  `status --await cp_script --question "Approve the scripts, or send changes?" --review script/script.json --review plan/visual_plan.json --review research/visual_facts.json --review research/sources.md --review shorts/a_hook/script.json ...`
+  `status --await cp_script --question "Approve the scripts, or send changes?" --review script/script.json --review plan/visual_plan.json --review research/visual_facts.json --review research/sources.md --review review/research.md --review review/qa.md --review shorts/a_hook/script.json ...`
 - After everything is built and uploaded:
   `status --await cp_final --question "Approve the final outputs?" --review out/youtube_metadata.md --review build/stills_<slug>.jpg`
 
@@ -66,6 +68,8 @@ These videos are built around one strong question and a relentless visual rhythm
 - **End with a payoff and a bridge.** Answer the opening question, then one line naming the next video (`next` in the script, shown on the end card).
 
 ## The work, stage by stage
+
+**Rubrics.** First run `python3 -m infogen rubric show script research`. These are the criteria the Quality and Research Analysts will score your work against. Earlier runs built them from what went wrong before, so meet them from the start, not after the review.
 
 **Research.** Before writing, research the topic with WebSearch and WebFetch. Write `research/sources.md`: every number, date and claim you will use, each with its source (publisher, title, year, URL). Prefer primary and official sources (statistics agencies, company filings, peer-reviewed papers, major newspapers). Numbers on screen come only from this file. If a number cannot be sourced, do not show it. If the topic is breaking news, say in a warning how fresh the sources are.
 
@@ -97,26 +101,28 @@ Then write the Shorts in `shorts/<id>/script.json`, one per requested angle (`a_
 - `objects`: every recurring vehicle, aircraft, weapon or prop, with its specific type.
 - `backgrounds`: every recurring place, as an **empty** set with no people and room for figures.
 - Every object and background lists the visual facts it is drawn from in `facts` (ids from `research/visual_facts.json`); so do characters in a uniform or period dress, and frames with no background that show a specific thing. The facts' `looks` are added to the prompt automatically, so the prompt itself can stay short. `validate --plan` rejects a missing facts file, an object or background that cites none, and an unknown id.
-- `frames`: one per visual beat. Each has:
+- `frames`: one per visual beat, **50 to 80 per 10 minutes**: each frame is on screen for 8 to 12 seconds. Each has:
   - its `background` and up to 3 `refs`, characters or objects by id;
   - a `prompt` with the action and the placement. Say where each figure stands and how big it is, for example "the pilot stands on the left, fully visible, about half the frame height".
   - A third ref is added in a second pass, described in `add`.
 
   A frame with no background (a close-up, an abstract picture) is text-to-image and takes no refs.
 
-In the script, an illustration scene names its frame as `"image": "<frame id>"`. A frame may carry at most two consecutive scenes, with different crops (`"move": {"from": [x, y, zoom], "to": [x, y, zoom]}`); never come back to a frame after other scenes.
+In the script, an illustration scene names its frame as `"image": "<frame id>"`. A frame may carry at most two consecutive scenes, with different crops (`"move": {"from": [x, y, zoom], "to": [x, y, zoom]}`); never come back to a frame after other scenes. `validate --plan` rejects both, and warns when the frames are on screen for less than 7.5 or more than 12 seconds on average.
 
 Budget, from the request:
-- `visuals.illustrations` frames;
+- `visuals.illustrations` frames at most (80 per 10 minutes by default; plan 50 to 80);
 - `visuals.characters` characters;
 - `visuals.objects` objects;
 - `visuals.backgrounds` backgrounds.
 
 Prompts describe pictures only, never text, labels or numbers (the templates add those, spelled correctly). Leave out the cut-out `cast` layer on illustration scenes: the characters are already in the frame.
 
-**Animation: simple only.** A few frames come to life with Wan2.2. Give those frames an `animate` block (slots: the docstring of `/app/infogen/animate.py`), and show each one with a scene `{"type": "clip", "clip": "<frame id>"}`.
+**Animation: simple only.** A few frames come to life. Give those frames an `animate` block (slots: the docstring of `/app/infogen/animate.py`), and show each one with a scene `{"type": "clip", "clip": "<frame id>"}`. Clip lengths are fixed:
+- **Wan2.2, 5 seconds** (the default). On a frame longer than 5 s the clip holds its last frame, so put the clip scene first and let the frame's second scene show the still with a camera move.
+- **LTX 2.3 hero shot, 10 seconds,** with `"engine": "ltx"`: only for the one or two biggest moments (the opening hook, the climax), and only if `visuals.ltx_clips` > 0. Give it a scene of about 10 seconds, or two consecutive scenes on its frame.
 - **Pick only the beats that carry the story:** the opening hook, the turning point, the climax, and at most one per chapter.
-- **The cap is hard:** `visuals.animated_max_pct` of the frames, and never more than `visuals.animated_clips`. `validate --plan` rejects a plan over it.
+- **The caps are hard:** Wan clips, `visuals.animated_max_pct` of the frames and never more than `visuals.animated_clips`; LTX hero shots, `visuals.ltx_clips`. `validate --plan` rejects a plan over either.
 - **Keep every animation SIMPLE.** Complex animation does not come out as intended:
   - **One main motion:** one subject, one visible action, a direction and a slow speed. For example "the silver plane flies slowly from left to right high in the sky, staying small".
   - **At most one small secondary action,** by position: "the pilot on the left waves his raised hand". Leave it out if the main motion tells the beat.
@@ -128,12 +134,32 @@ Prompts describe pictures only, never text, labels or numbers (the templates add
 - **Move a subject the way it faces.** In the frame `prompt`, say which way a moving subject faces ("the plane faces left, nose on the left"), and have `main` move it that way ("flies slowly from right to left"). A plane told to fly against its facing flies off into the distance instead.
 - **Word a held action as continuous** ("keeps his hand raised and waves it side to side for the whole clip"), or it may stop after a second.
 
-`queue` checks each clip for camera movement and retries once with only the main motion. If the clip still fails, or the cap is used up, the scene shows the still frame. Report the `animation: … clips made, … of … allowed attempts used` line as a warning, and record `--cost wan_clips=<attempts>`.
+`queue` checks each clip for camera movement and retries once with only the main motion. If the clip still fails, or the cap is used up, the scene shows the still frame. Report the `animation: …` line as a warning, and record `--cost wan_clips=<attempts>` and, if any, `--cost ltx_clips=<attempts>`.
 
 Run `validate` (with `--assets assets.json --plan plan/visual_plan.json --target-seconds <n>` for the long video, and `--short <id>` for each Short) and fix every error before the checkpoint.
 
+**Review by the analysts.** Two independent analysts check the work before anything is paid for:
+- the **Research Analyst**: sources, claims, visual facts and era;
+- the **Quality Analyst**: script, Shorts and visual plan.
+
+Each runs as its own Claude session, scores the work against its rubric and writes `review/research.md` or `review/qa.md` (with `.json` twins). Each run takes several minutes, so start both in the background and wait for both reports:
+
+    nohup python3 -m infogen analyst research > review_research.log 2>&1 &
+    nohup python3 -m infogen analyst qa > review_qa.log 2>&1 &
+
+Check every minute or so until `review/research.json` and `review/qa.json` both exist, and read the logs if one fails.
+
+Then read both reports:
+- Fix every `must_fix`.
+- Fix every `should_fix` unless you disagree for a stated reason: say which ones you rejected, and why, in a warning.
+- Take the suggestions that are cheap and clearly better.
+
+Run `validate` again, then check the fixes with `python3 -m infogen analyst research --verify` and `python3 -m infogen analyst qa --verify`. These run in the background too, write `review/<role>_verify.md` and record nothing.
+
+Report the result as a warning, for example "analysts: research 2 must-fix and 3 should-fix, qa 1 must-fix and 4 should-fix; all must-fix resolved; 2 should-fix rejected: ...". The analysts' new guidelines are added to the rubrics automatically, so the next run is checked against them.
+
 **Assets.**
-1. Write `assets.json` with the music: `bgm_long` (120 s) and one track per Short (`bgm_<short id>`, 50 s). Add `ltx` animations only if `visuals.ltx_clips` > 0. Run `queue assets.json`.
+1. Write `assets.json` with the music: `bgm_long` (120 s) and one track per Short (`bgm_<short id>`, 50 s). Hero shots belong in the visual plan, not in `assets.json`. Run `queue assets.json`.
 2. Run `queue plan/visual_plan.json --only refs`. Every reference is drawn new from the series' style anchor (`style.json` `anchor`, or the preset default), so they all share one look.
 3. Open `sheet --assets --out build/refs_sheet.jpg` and regenerate any reference that is off (rules below) **before** any frame is made: every frame inherits its references.
 4. Run `queue plan/visual_plan.json --only frames`, then review the frames the same way.
@@ -166,7 +192,7 @@ Check each cut-out on the sheet: a character missing parts or with a background 
 
 **Thumbnail.** Make two or three variants with `thumb` (different `--out`): the strongest illustration or a character cut-out with a clear emotion, two to four words of text that add to the title rather than repeat it. Open them, pick one as `thumb/thumbnail.jpg`, and mention the alternatives in a warning so the reviewer can choose.
 
-**Metadata.** Write `meta.json` and run `metadata`. Titles: under 70 characters, a specific promise, no clickbait the video does not pay off (patterns that fit the format: "What If ... (Day by Day)", "... Hour by Hour", "... vs ...: Who Would Win?", "What Happens to Your Body When ...", "Why ... Is Collapsing"). The description must say what is AI-generated and keep the `{sources}` list. Then register every finished file with `status --output` and run `upload --prefix <output.prefix>`. If the upload fails, try once more, and if it still fails say so in a warning.
+**Metadata.** Write `meta.json` and run `metadata`. Titles: under 70 characters, a specific promise, no clickbait the video does not pay off (patterns that fit the format: "What If ... (Day by Day)", "... Hour by Hour", "... vs ...: Who Would Win?", "What Happens to Your Body When ...", "Why ... Is Collapsing"). The description must say what is AI-generated and keep the `{sources}` list. When the request's `series` gives a `playlist_url`, a `previous_episode_title` (with `previous_episode_url`) or a `next_episode_title`, link the playlist and the previous episode and name the next one in the description, so no placeholder is left. Then register every finished file with `status --output`, including `qa_report=review/qa.md` and `research_report=review/research.md`, and run `upload --prefix <output.prefix>`. If the upload fails, try once more, and if it still fails say so in a warning.
 
 ## Things you cannot do, and must say
 

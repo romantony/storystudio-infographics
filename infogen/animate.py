@@ -1,4 +1,5 @@
-"""Simple animation of selected frames with Wan2.2 image-to-video (RunPod, LightX2V 4-step), within a hard cap.
+"""Simple animation of selected frames, within hard caps: Wan2.2 image-to-video (RunPod, LightX2V 4-step), 5 s clips, by
+default; LTX 2.3 (ComfyUI Cloud) for a few hero shots, 10 s clips at 720p.
 
 A frame in the visual plan is animated when it has an "animate" block, written in the slots of the team's Wan2.2 prompt
 guideline. Keep it SIMPLE: one main motion, at most one small secondary action, a static camera. Complex animation
@@ -9,7 +10,9 @@ guideline. Keep it SIMPLE: one main motion, at most one small secondary action, 
               "ambient": "grey clouds drift slowly",                                                       optional, subtle
               "still": "the buildings, the fence and the runway",                                          what must not move
               "camera": "static",                     static (default) | slow push-in | slow pan left | slow pan right
-              "secs": 5}                              3-7 whole seconds (default 5)
+              "engine": "wan"}                        wan (default, 5 s) | ltx (a hero shot, 10 s)
+Clip lengths are fixed. A 5 s Wan clip on a longer frame holds its last frame; give a 10 s hero shot a scene (or two
+consecutive scenes on its frame) of about 10 s.
 
 The scene that shows it is {"type": "clip", "clip": "<frame id>"}. If the clip is missing (over the cap, not approved,
 or rejected by the camera check), build shows the still frame instead.
@@ -19,16 +22,18 @@ Only an APPROVED frame is animated: a distorted or off-prompt frame makes a dist
 records each frame with a fingerprint of its image (build/frame_approvals.json). A frame regenerated after approval has
 a different fingerprint and must be approved again.
 
-Cap: at most min(visuals.animated_clips, floor(visuals.animated_max_pct / 100 * frames)) clips per video, retries
-included (request.json; defaults 18 and 20 %). validate --plan rejects a plan over the cap; queue never submits past it.
+Caps: Wan, at most min(visuals.animated_clips, floor(visuals.animated_max_pct / 100 * frames)) clips per video, retries
+included (request.json; defaults 18 and 20 %); LTX hero shots, at most visuals.ltx_clips (default 0), retries included.
+validate --plan rejects a plan over either cap; queue never submits past them.
 Each clip is checked for camera movement (phase correlation of its first and last frame): a moving camera gets one
 retry with the camera forced static and the secondary/ambient motion dropped, then falls back to the still.
-Clips come back at 832x480, 16 fps; they are converted to 1920x1080 at 30 fps as assets/<frame id>.mp4.
+Wan clips come back at 832x480, 16 fps, LTX at 1280x720, 25 fps; both are converted to 1920x1080 at 30 fps as
+assets/<frame id>.mp4.
 
 python3 -m infogen queue plan/visual_plan.json --only animate"""
 import hashlib, json, math, os, re, subprocess, sys, time
 import numpy as np
-from . import rp
+from . import ltx, rp
 from .common import ASSETS, mkdirs
 
 APPROVALS = "build/frame_approvals.json"
@@ -54,6 +59,8 @@ def main(cmd, argv):
 CAMERAS = {"static": "Static camera.", "slow push-in": "Slow push-in.", "slow pan left": "Slow pan left.", "slow pan right": "Slow pan right."}
 STYLE_LOCK = "Flat 2D cartoon animation, consistent line art and colors."
 DEFAULTS = {"animated_max_pct": 20, "animated_clips": 18}
+ENGINES = ("wan", "ltx")
+SECS = {"wan": 5, "ltx": 10}   # fixed clip lengths: a short Wan move, a longer LTX hero shot
 SEQUENCE = re.compile(r"\b(then|after(wards)?|before|until|finally|next|meanwhile|while)\b", re.I)
 MAX_WORDS = 80
 LIMITS = {"main": 25, "secondary": 15, "ambient": 10, "still": 20}
@@ -80,11 +87,12 @@ def check(a, fid):
     err = []
     if not isinstance(a, dict): return [f"{fid}: animate must be an object"]
     for k in a:
-        if k not in ("main", "secondary", "ambient", "still", "camera", "secs"): err.append(f"{fid}: animate.{k} is not a slot (main, secondary, ambient, still, camera, secs)")
+        if k == "secs": err.append(f"{fid}: animate.secs: clip lengths are fixed (Wan {SECS['wan']} s, an LTX hero shot {SECS['ltx']} s)")
+        elif k not in ("main", "secondary", "ambient", "still", "camera", "engine"): err.append(f"{fid}: animate.{k} is not a slot (main, secondary, ambient, still, camera, engine)")
     for k in ("main", "still"):
         if not str(a.get(k, "")).strip(): err.append(f"{fid}: animate.{k} is required")
     if a.get("camera", "static") not in CAMERAS: err.append(f"{fid}: animate.camera must be one of: {', '.join(CAMERAS)}")
-    if not (isinstance(a.get("secs", 5), int) and 3 <= a.get("secs", 5) <= 7): err.append(f"{fid}: animate.secs must be a whole number from 3 to 7")
+    if a.get("engine", "wan") not in ENGINES: err.append(f"{fid}: animate.engine must be wan or ltx")
     for k, n in LIMITS.items():
         v = str(a.get(k, "") or "")
         if len(v.split()) > n: err.append(f"{fid}: animate.{k} has {len(v.split())} words; keep it to {n} (simple motion comes out, complex motion does not)")
@@ -93,10 +101,12 @@ def check(a, fid):
     if not err and len(prompt(a).split()) > MAX_WORDS: err.append(f"{fid}: the animation prompt is over {MAX_WORDS} words; cut the motion down")
     return err
 
-def cap(plan, visuals=None):
-    """How many clips the request allows for this plan."""
+def engine(f): return f["animate"].get("engine", "wan")
+
+def cap(plan, visuals=None, eng="wan"):
+    """How many clips of an engine the request allows for this plan."""
+    if eng == "ltx": return int((visuals or {}).get("ltx_clips") or 0)
     v = {**DEFAULTS, **{k: x for k, x in (visuals or {}).items() if k in DEFAULTS and x is not None}}
-    if (visuals or {}).get("animated_clips") is None and (visuals or {}).get("ltx_clips"): v["animated_clips"] = visuals["ltx_clips"]   # older requests
     return min(int(v["animated_clips"]), math.floor(float(v["animated_max_pct"]) / 100 * len(plan.get("frames", []))))
 
 def drift(video):
@@ -114,16 +124,18 @@ def drift(video):
     return max(abs(dx), abs(dy))
 
 def finish(raw, out):
-    """832x480 at 16 fps -> 1920x1080 at 30 fps (motion-interpolated, cropped to 16:9)."""
+    """A Wan (832x480, 16 fps) or LTX (1280x720, 25 fps) clip -> 1920x1080 at 30 fps (motion-interpolated, cropped to 16:9)."""
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", raw, "-an", "-vf",
                     "minterpolate=fps=30:mi_mode=mci:mc_mode=aobmc:vsbmc=1,scale=1920:1080:force_original_aspect_ratio=increase:flags=lanczos,crop=1920:1080",
                     "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p", out], check=True)
 
 def run(plan, state, save, pid, visuals, failed, warnings):
     """Animate the frames that ask for it, up to the cap, CONCURRENCY at a time. Resumable; attempts are counted in
-    state["_animate"]["attempts"] across runs, so a re-run cannot spend past the cap."""
-    allowed = cap(plan, visuals)
-    book = state.setdefault("_animate", {"attempts": 0}); book["cap"] = allowed
+    state["_animate"] across runs, so a re-run cannot spend past the caps."""
+    allowed = {e: cap(plan, visuals, e) for e in ENGINES}
+    book = state.setdefault("_animate", {"attempts": 0}); book.setdefault("ltx_attempts", 0)
+    book["cap"], book["ltx_cap"] = allowed["wan"], allowed["ltx"]
+    spent = lambda eng: "attempts" if eng == "wan" else "ltx_attempts"
     todo = [f for f in plan.get("frames", []) if isinstance(f, dict) and f.get("animate")]
     todo = [f for f in todo if not os.path.exists(f"{ASSETS}/{f['id']}.mp4")]
     mkdirs(ASSETS, "build/anim")
@@ -138,13 +150,31 @@ def run(plan, state, save, pid, visuals, failed, warnings):
     running = {}
 
     def submit(f, img, simple):
-        if book["attempts"] >= allowed:
-            warnings.append(f"{f['id']}: not animated, the cap of {allowed} clips is used up (the still is shown)"); print("CAP", f["id"], flush=True); return
-        e = state.setdefault(f["id"] + ".mp4", {})
-        inp = {"image": img, "prompt": prompt(f["animate"], simple), "resolution": "480p", "duration_s": int(f["animate"].get("secs", 5)), "sample_steps": 4,
-               "project_id": pid, "frame_id": f["id"] + "_anim"}
-        e.update(ep="wan", job=rp.submit("wan", inp), simple=simple, prompt=inp["prompt"]); e.pop("error", None)
-        book["attempts"] += 1; save(); running[f["id"]] = (f, img, simple); print("queued", f["id"] + ".mp4", "(retry: static, main motion only)" if simple else "", flush=True)
+        eng = engine(f)
+        if book[spent(eng)] >= allowed[eng]:
+            what = "clips" if eng == "wan" else "LTX hero shots"
+            warnings.append(f"{f['id']}: not animated, the cap of {allowed[eng]} {what} is used up (the still is shown)"); print("CAP", f["id"], eng, flush=True); return
+        e = state.setdefault(f["id"] + ".mp4", {}); pr = prompt(f["animate"], simple)
+        if eng == "wan":
+            job = rp.submit("wan", {"image": img, "prompt": pr, "resolution": "480p", "duration_s": SECS["wan"], "sample_steps": 4, "project_id": pid, "frame_id": f["id"] + "_anim"})
+        else:
+            job = ltx.submit(f"{ASSETS}/{f['id']}.png", pr, w=1280, h=720, secs=SECS["ltx"], tag=f"{pid}_{f['id']}")
+        e.update(ep=eng, job=job, simple=simple, prompt=pr); e.pop("error", None)
+        book[spent(eng)] += 1; save(); running[f["id"]] = (f, img, simple); print("queued", f["id"] + ".mp4", eng, "(retry: static, main motion only)" if simple else "", flush=True)
+
+    def collect(e, raw):
+        """None while the job runs; else an error, or "" with the clip saved to raw."""
+        if e.get("ep") == "ltx":
+            s = ltx.poll(e["job"])
+            if s == "running": return None
+            if s == "failed": return "LTX job failed"
+            ltx.fetch(e["job"], raw); return ""
+        s = rp.status("wan", e["job"])
+        if s.get("status") in ("IN_QUEUE", "IN_PROGRESS"): return None
+        out = s.get("output") or {}
+        url = out.get("video_url") if isinstance(out, dict) else None
+        if s.get("status") != "COMPLETED" or not url: return str(s.get("error") or out)[:300]
+        rp.download(url, raw); e.update(url=url, seed=out.get("seed")); return ""
 
     for f, img, simple in list(queue):   # jobs already queued by an earlier run are picked up, not resubmitted
         e = state.get(f["id"] + ".mp4", {})
@@ -154,16 +184,13 @@ def run(plan, state, save, pid, visuals, failed, warnings):
         while queue and len(running) < CONCURRENCY:
             submit(*queue.pop(0))
         for fid, (f, img, simple) in list(running.items()):
-            e = state[fid + ".mp4"]
-            try: s = rp.status("wan", e["job"])
+            e = state[fid + ".mp4"]; raw = f"build/anim/{fid}_raw.mp4"
+            try: res = collect(e, raw)
             except Exception: continue
-            if s.get("status") in ("IN_QUEUE", "IN_PROGRESS"): continue
+            if res is None: continue
             del running[fid]
-            out = s.get("output") or {}
-            url = out.get("video_url") if isinstance(out, dict) else None
-            if s.get("status") != "COMPLETED" or not url:
-                e["error"] = str(s.get("error") or out)[:300]; save(); failed.append(fid + ".mp4"); print("FAIL", fid + ".mp4", e["error"], flush=True); continue
-            raw = f"build/anim/{fid}_raw.mp4"; rp.download(url, raw); e.update(url=url, seed=out.get("seed"))
+            if res:
+                e["error"] = res; save(); failed.append(fid + ".mp4"); print("FAIL", fid + ".mp4", e["error"], flush=True); continue
             d = drift(raw); e["drift"] = round(d, 3)
             if d > DRIFT:
                 e["error"] = f"camera moved ({d:.0%} of the frame)"; save(); print("DRIFT", fid, e["error"], flush=True)
@@ -174,6 +201,7 @@ def run(plan, state, save, pid, visuals, failed, warnings):
         if running: time.sleep(10)
     for fid in running: failed.append(fid + ".mp4"); state[fid + ".mp4"]["error"] = "timeout"
     save()
-    used = book["attempts"]; made = sum(1 for f in plan.get("frames", []) if isinstance(f, dict) and f.get("animate") and os.path.exists(f"{ASSETS}/{f['id']}.mp4"))
-    warnings.append(f"animation: {made} clips made, {used} of {allowed} allowed attempts used")
-    print(f"animation: {made} clips, {used}/{allowed} attempts", flush=True)
+    made = {e: sum(1 for f in plan.get("frames", []) if isinstance(f, dict) and f.get("animate") and engine(f) == e and os.path.exists(f"{ASSETS}/{f['id']}.mp4")) for e in ENGINES}
+    line = f"animation: {made['wan']} clips made, {book['attempts']} of {allowed['wan']} allowed attempts used"
+    if allowed["ltx"] or book["ltx_attempts"]: line += f"; {made['ltx']} LTX hero shots made, {book['ltx_attempts']} of {allowed['ltx']} allowed attempts used"
+    warnings.append(line); print(line, flush=True)

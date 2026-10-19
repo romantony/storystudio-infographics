@@ -9,6 +9,7 @@ assets.json:
   "characters": [{"id": "hero_worried", "prompt": "{hero} looking worried, both hands on his head", "aspect": "9:16"}],
   "bgm":        [{"id": "bgm_long", "prompt": "...", "seconds": 120}],
   "ltx":        [{"id": "ltx_city_night", "image": "city_night", "prompt": "...", "secs": 5}] }
+"ltx" here is the older path with no cap; hero shots now go in the visual plan ("engine": "ltx", see infogen/animate.py).
 Prompts are wrapped in the series style (style.py): scenes in the illustration style, characters in the character style
 on a plain white background, after which they are cut out automatically to <asset dir>/cutouts/<id>.png.
 Name recurring people as {cast_id} so every image uses the same description from style.json.

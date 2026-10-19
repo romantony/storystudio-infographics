@@ -1,0 +1,112 @@
+{
+ "kind": "research",
+ "title": "Research Analyst: sources, claims and visual facts",
+ "version": 1,
+ "updated_at": "2026-10-19",
+ "criteria": [
+  {
+   "id": "R01",
+   "area": "sourcing",
+   "check": "Every number, date, quotation and causal claim in the script appears in research/sources.md with publisher, title, year and URL.",
+   "why": "Numbers on screen come only from sources.",
+   "weight": 3,
+   "status": "active",
+   "source": "seed",
+   "added": "2026-10-19",
+   "checked": 0,
+   "failed": 0,
+   "last_failed": null
+  },
+  {
+   "id": "R02",
+   "area": "source quality",
+   "check": "Primary or official sources (statistics agencies, filings, peer-reviewed papers, archives, major newspapers) back the key claims; blogs and aggregators are not the only source of a claim.",
+   "why": "Weak sources get repeated errors.",
+   "weight": 3,
+   "status": "active",
+   "source": "seed",
+   "added": "2026-10-19",
+   "checked": 0,
+   "failed": 0,
+   "last_failed": null
+  },
+  {
+   "id": "R03",
+   "area": "accuracy",
+   "check": "Spot-checked claims match their sources: the figure, its unit, its year and what it measures.",
+   "why": "A misread unit or year is the commonest error.",
+   "weight": 3,
+   "status": "active",
+   "source": "seed",
+   "added": "2026-10-19",
+   "checked": 0,
+   "failed": 0,
+   "last_failed": null
+  },
+  {
+   "id": "R04",
+   "area": "verify flags",
+   "check": "Every scene stating a number, date, quotation or causal claim has verify: true and a verify_note naming its source.",
+   "why": "The human reviewer checks those scenes.",
+   "weight": 2,
+   "status": "active",
+   "source": "seed",
+   "added": "2026-10-19",
+   "checked": 0,
+   "failed": 0,
+   "last_failed": null
+  },
+  {
+   "id": "R05",
+   "area": "disputed facts",
+   "check": "Where sources disagree, the script says so or uses the conservative figure, and a warning names the disagreement.",
+   "why": "False precision misleads.",
+   "weight": 2,
+   "status": "active",
+   "source": "seed",
+   "added": "2026-10-19",
+   "checked": 0,
+   "failed": 0,
+   "last_failed": null
+  },
+  {
+   "id": "R06",
+   "area": "visual facts",
+   "check": "research/visual_facts.json covers every recurring person, vehicle, machine, building and place on screen, each with a specific name, visible features and a source.",
+   "why": "Generic prompts make the model draw modern or wrong things.",
+   "weight": 3,
+   "status": "active",
+   "source": "seed",
+   "added": "2026-10-19",
+   "checked": 0,
+   "failed": 0,
+   "last_failed": null
+  },
+  {
+   "id": "R07",
+   "area": "era",
+   "check": "Nothing in the frame prompts or visual facts is out of period or out of place for the era (vehicles, uniforms, technology, buildings, flags).",
+   "why": "Anachronisms are what viewers notice and comment on.",
+   "weight": 3,
+   "status": "active",
+   "source": "seed",
+   "added": "2026-10-19",
+   "checked": 0,
+   "failed": 0,
+   "last_failed": null
+  },
+  {
+   "id": "R08",
+   "area": "freshness",
+   "check": "For recent or ongoing topics, the newest figures are used and their date is stated.",
+   "why": "Stale numbers date the video at once.",
+   "weight": 2,
+   "status": "active",
+   "source": "seed",
+   "added": "2026-10-19",
+   "checked": 0,
+   "failed": 0,
+   "last_failed": null
+  }
+ ]
+}

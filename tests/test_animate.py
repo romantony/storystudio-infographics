@@ -4,7 +4,7 @@ import json, os, random, shutil, subprocess, sys, tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 from PIL import Image, ImageDraw
-from infogen import animate as AN, build, rp, visual_plan as VP
+from infogen import animate as AN, build, ltx, rp, visual_plan as VP
 
 fails = 0
 def check(name, cond, got=None):
@@ -30,7 +30,8 @@ for name, block, needle in [
         ("too long", {**GOOD, "main": " ".join(["slowly"] * 26)}, "keep it to 25"),
         ("two sentences", {**GOOD, "secondary": "the pilot waves. the girl points."}, "one sentence"),
         ("bad camera", {**GOOD, "camera": "orbit"}, "camera must be one of"),
-        ("secs out of range", {**GOOD, "secs": 8}, "3 to 7"),
+        ("a clip length", {**GOOD, "secs": 8}, "clip lengths are fixed"),
+        ("unknown engine", {**GOOD, "engine": "sora"}, "engine must be wan or ltx"),
         ("missing still", {k: v for k, v in GOOD.items() if k != "still"}, "animate.still is required"),
         ("unknown slot", {**GOOD, "dialogue": "hello"}, "not a slot")]:
     check(f"check rejects: {name}", any(needle in e for e in AN.check(block, "f1")), AN.check(block, "f1"))
@@ -40,13 +41,18 @@ plan = lambda n, k: {"frames": [{"id": f"f{i}", "prompt": "x", **({"animate": GO
 check("cap: 20 % of 45 frames = 9", AN.cap(plan(45, 0), None) == 9, AN.cap(plan(45, 0), None))
 check("cap: animated_clips is the ceiling", AN.cap(plan(100, 0), {"animated_max_pct": 40, "animated_clips": 18}) == 18)
 check("cap: 0 % means no animation", AN.cap(plan(45, 0), {"animated_max_pct": 0}) == 0)
-check("cap: an older request's ltx_clips counts as the ceiling", AN.cap(plan(45, 0), {"ltx_clips": 3}) == 3)
+check("cap: ltx_clips is the hero-shot cap, separate from Wan's", AN.cap(plan(45, 0), {"ltx_clips": 3}, "ltx") == 3 and AN.cap(plan(45, 0), {"ltx_clips": 3}) == 9
+      and AN.cap(plan(45, 0), None, "ltx") == 0)
+hero = plan(10, 2); hero["frames"][0]["animate"] = {**GOOD, "engine": "ltx"}
+check("plan check: an LTX hero shot needs visuals.ltx_clips", any("1 LTX hero shots, the request allows 0" in e for e in VP.check(hero, {"illustrations": 24})[0]))
+check("plan check: hero shots don't count against the Wan cap", VP.check(hero, {"illustrations": 24, "ltx_clips": 1, "animated_max_pct": 10})[0] == [],
+      VP.check(hero, {"illustrations": 24, "ltx_clips": 1, "animated_max_pct": 10})[0])
 err, _ = VP.check(plan(10, 3), {"illustrations": 24})
 check("plan check: 3 animated of 10 frames at 20 % is over the cap of 2", any("3 animated, the cap allows 2" in e for e in err), err)
 check("plan check: 2 animated of 10 is fine", not any("animated" in e for e in VP.check(plan(10, 2), {"illustrations": 24})[0]))
 bad = plan(10, 1); bad["frames"][0]["animate"] = {**GOOD, "main": "the plane lands and then taxis"}
 check("plan check includes the simplicity rules", any("sequence" in e for e in VP.check(bad, {"illustrations": 24})[0]))
-w = VP.check_scenes(plan(3, 1), [{"type": "clip", "clip": "f0"}, {"type": "clip", "clip": "f1"}, {"type": "illustration", "image": "f2"}])
+_, w = VP.check_scenes(plan(3, 1), [{"type": "clip", "clip": "f0"}, {"type": "clip", "clip": "f1"}, {"type": "illustration", "image": "f2"}])
 check("scene check: a clip of a frame with no animate is reported", any("clip 'f1' is a frame with no \"animate\"" in x for x in w) and not any("'f0'" in x for x in w), w)
 
 # ---- camera check and conversion, on synthetic clips ----
@@ -106,9 +112,9 @@ check("queue: the rest reported as over the cap", sum("cap of 2 clips is used up
 check("queue: concurrency limit respected", peak[0] <= 1, peak[0])
 check("queue: clips land as assets/<frame>.mp4 at 1080p", os.path.exists("assets/f0.mp4") and os.path.exists("assets/f1.mp4") and not os.path.exists("assets/f2.mp4"))
 i0 = submits[0][1]
-check("queue: Wan request per the endpoint (480p, whole seconds, 4 steps, frame image)",
+check("queue: Wan request per the endpoint (480p, always 5 s, 4 steps, frame image)",
       (i0["resolution"], i0["duration_s"], i0["sample_steps"], i0["image"]) == ("480p", 5, 4, "https://cdn/f0.png") and i0["prompt"] == AN.prompt(GOOD), i0)
-check("queue: attempts and cap recorded", state["_animate"] == {"attempts": 2, "cap": 2}, state["_animate"])
+check("queue: attempts and caps recorded", state["_animate"] == {"attempts": 2, "cap": 2, "ltx_attempts": 0, "ltx_cap": 0}, state["_animate"])
 
 before = len(submits); AN.run(P, state, save, "t", {"animated_max_pct": 20}, [], [])
 check("re-run: nothing resubmitted, still capped", len(submits) == before, len(submits) - before)
@@ -120,6 +126,23 @@ warns = []
 AN.run(plan(10, 1), state, save, "t", {"animated_max_pct": 30}, [], warns)
 check("drift: retried once with the simple prompt", len(submits) == 2 and "Grey clouds" not in submits[1][1]["prompt"] and "Static camera." in submits[1][1]["prompt"], [i["prompt"] for _, i in submits])
 check("drift twice: no clip, reported, attempts counted", not os.path.exists("assets/f0.mp4") and any("camera moved in both attempts" in w for w in warns) and state["_animate"]["attempts"] == 2, (warns, state["_animate"]))
+
+# LTX hero shot: 10 s at 720p from the local frame, its own cap, the Wan cap untouched
+shutil.rmtree("assets"); os.makedirs("assets"); frames(10); AN.main("approve", [f"f{i}" for i in range(10)])
+state = {f["id"]: {"url": f"https://cdn/{f['id']}.png"} for f in P["frames"]}; submits.clear(); pan_for.clear()
+lsub = []
+ltx.submit = lambda image, prompt, **kw: lsub.append((image, prompt, kw)) or f"L{len(lsub)}"
+ltx.poll = lambda job: "done"
+ltx.fetch = lambda job, out: shutil.copy("subject.mp4", out)
+HP = plan(10, 3); HP["frames"][0]["animate"] = HP["frames"][1]["animate"] = {**GOOD, "engine": "ltx"}
+warns = []
+AN.run(HP, state, save, "t", {"animated_max_pct": 20, "ltx_clips": 1}, [], warns)
+check("hero shot: one LTX job (cap 1), 10 s at 1280x720 from the frame file", len(lsub) == 1 and lsub[0][0] == "assets/f0.png"
+      and (lsub[0][2]["secs"], lsub[0][2]["w"], lsub[0][2]["h"]) == (10, 1280, 720) and lsub[0][1] == AN.prompt(GOOD), lsub)
+check("hero shot: the second is over the LTX cap; the Wan frame still runs", any("cap of 1 LTX hero shots" in w for w in warns)
+      and [i["frame_id"] for _, i in submits] == ["f2_anim"] and os.path.exists("assets/f0.mp4") and os.path.exists("assets/f2.mp4"), (warns, submits))
+check("hero shot: reported apart from the Wan clips", any("1 clips made, 1 of 2" in w and "1 LTX hero shots made, 1 of 1" in w for w in warns), warns)
+os.remove("assets/f0.mp4")
 
 # ---- frames to be animated are composed for it ----
 refs = {"pilot": ("characters", {"id": "pilot"})}

@@ -16,6 +16,7 @@ from . import timing, visual_plan as VP
 
 REQUIRED = {"illustration": ["image"], "bar_chart": ["items"], "line_chart": ["points"], "donut": ["items"], "counter": ["value"], "icons": ["total", "highlight"],
             "versus": ["a", "b"], "timeline": ["events"], "list": ["items"], "map": [], "title": ["title"], "timecard": ["text"], "text": ["text"], "clip": ["clip"]}
+FRAME_SECS = (7.5, 12)   # seconds on screen per frame: 50 to 80 frames per 10 minutes
 DATA = {"bar_chart", "line_chart", "donut", "counter", "icons", "versus"}
 
 def main(cmd, argv):
@@ -30,7 +31,8 @@ def main(cmd, argv):
         P = json.load(open(argv[argv.index("--plan") + 1]))
         visuals = json.load(open("request.json")).get("visuals", {}) if os.path.exists("request.json") else None
         pe, pw = VP.check(P, visuals); fe, fw = VP.check_facts(P, VP.load_facts()); pe += fe; pw += fw; err += [f"plan: {e}" for e in pe]; warn += [f"plan: {w}" for w in pw]
-        if not sid: warn += [f"plan: {w}" for w in VP.check_scenes(P, sc)]   # Shorts reuse the long video's frames
+        if not sid:   # Shorts reuse the long video's frames
+            se, sw = VP.check_scenes(P, sc); err += [f"plan: {e}" for e in se]; warn += [f"plan: {w}" for w in sw]
         planned |= VP.ids(P)
     seen = Counter()
     words = 0
@@ -57,6 +59,10 @@ def main(cmd, argv):
     secs = words / WPS
     tgt = int(argv[argv.index("--target-seconds") + 1]) if "--target-seconds" in argv else None
     if tgt and abs(secs - tgt) > tgt * 0.15: warn.append(f"estimated {secs:.0f} s of narration against a target of {tgt} s")
+    if "--plan" in argv and not sid and secs:
+        nf = len(P.get("frames", [])); per = secs / nf if nf else 0
+        if nf and not FRAME_SECS[0] <= per <= FRAME_SECS[1]:
+            warn.append(f"plan: {nf} frames for about {secs:.0f} s is one every {per:.1f} s; aim for one every {FRAME_SECS[0]} to {FRAME_SECS[1]} s (50 to 80 per 10 minutes)")
     types = Counter(s.get("type") for s in sc)
     print(json.dumps({"scenes": len(sc), "words": words, "estimated_seconds": round(secs), "types": types, "errors": err, "warnings": warn}, indent=1))
     if err: sys.exit(1)

@@ -8,7 +8,7 @@ Without a bucket, files stay in the run folder and a warning is added to the sta
 import mimetypes, os, sys
 from urllib.parse import quote
 from . import status
-TYPES = {".mp4": "video/mp4", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".md": "text/markdown; charset=utf-8",
+TYPES = {".mp4": "video/mp4", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".md": "text/markdown; charset=utf-8", ".pdf": "application/pdf",
          ".json": "application/json", ".txt": "text/plain; charset=utf-8", ".srt": "text/plain; charset=utf-8"}
 
 def main(cmd, argv):

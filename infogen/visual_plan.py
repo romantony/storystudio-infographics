@@ -30,7 +30,8 @@ day or a scenario): what each person, place and thing the video shows really loo
              "avoid": "jet engines, two engines", "source": "Smithsonian NASM, Douglas C-54 Skymaster"}] }
 `avoid` (optional) is what models tend to draw instead; it is for the image review, not the prompt.
 
-- `animate` on a frame animates it with Wan2.2, within the request's cap: see infogen/animate.py. Keep it simple.
+- `animate` on a frame animates it, with Wan2.2 (5 s) or as an LTX hero shot (10 s), within the request's caps: see
+  infogen/animate.py. Keep it simple.
 
 python3 -m infogen queue plan/visual_plan.json [--only anchor,refs,frames,animate]
 python3 -m infogen validate --plan plan/visual_plan.json      (with the script checks; budget from request.json, facts from research/)"""
@@ -41,7 +42,7 @@ from .common import ASSETS, APP
 
 GROUPS = ("characters", "objects", "backgrounds")
 MAX_IMAGES = 3                    # qwen-image-edit: images per pass
-BUDGET = {"characters": ("characters", 6), "objects": ("objects", 8), "backgrounds": ("backgrounds", 8), "frames": ("illustrations", 24)}
+BUDGET = {"characters": ("characters", 8), "objects": ("objects", 8), "backgrounds": ("backgrounds", 8), "frames": ("illustrations", 80)}
 ID = re.compile(r"[A-Za-z0-9_]+$")
 SAME_STYLE = ("in exactly the same flat vector style as image 1: the same line weight, the same flat colour fills with no shading, "
               "the same simple face style and the same realistic body proportions")
@@ -86,8 +87,10 @@ def check(plan, visuals=None):
         cap = (visuals or {}).get(field, default) if visuals is not None else None
         n = len(plan.get(g, []))
         if cap is not None and n > cap: err.append(f"{g}: {n} planned, the request allows {cap} (visuals.{field})")
-    n_anim = sum(1 for f in plan.get("frames", []) if isinstance(f, dict) and f.get("animate"))
+    anim = [f for f in plan.get("frames", []) if isinstance(f, dict) and isinstance(f.get("animate"), dict)]
+    n_anim = sum(1 for f in anim if AN.engine(f) == "wan"); n_ltx = len(anim) - n_anim
     allowed = AN.cap(plan, visuals)
+    if n_ltx > AN.cap(plan, visuals, "ltx"): err.append(f"frames: {n_ltx} LTX hero shots, the request allows {AN.cap(plan, visuals, 'ltx')} (visuals.ltx_clips)")
     if n_anim > allowed: err.append(f"frames: {n_anim} animated, the cap allows {allowed} (visuals.animated_max_pct of {len(plan.get('frames', []))} frames, "
                                     f"at most visuals.animated_clips); animate only the key beats")
     used = {r for f in plan.get("frames", []) if isinstance(f, dict) for r in f.get("refs", [])} | {f.get("background") for f in plan.get("frames", []) if isinstance(f, dict)}
@@ -129,9 +132,10 @@ def facts_desc(x, facts):
 def facts_line(x, facts): d = facts_desc(x, facts); return f" Accurate details: {d}." if d else ""
 
 def check_scenes(plan, scenes):
-    """Warnings for how the script uses the frames: unused frames, a frame carrying more than 2 scenes, a frame used again
-    after other scenes came between (one picture = one visual beat, at most two consecutive scenes with different crops)."""
-    warn = []; fids = [f["id"] for f in plan.get("frames", []) if isinstance(f, dict) and "id" in f]
+    """(errors, warnings) for how the script uses the frames. Errors: a frame carrying more than 2 scenes, or used again
+    after other scenes came between (one picture = one visual beat, at most two consecutive scenes with different crops).
+    Warnings: an unused frame, a clip scene on a frame with no animate."""
+    err, warn = [], []; fids = [f["id"] for f in plan.get("frames", []) if isinstance(f, dict) and "id" in f]
     animated = {f["id"] for f in plan.get("frames", []) if isinstance(f, dict) and f.get("animate")}
     for s in scenes:
         if s.get("type") == "clip" and s.get("clip") in fids and s["clip"] not in animated:
@@ -140,9 +144,9 @@ def check_scenes(plan, scenes):
     for fid in fids:
         pos = [i for i, x in enumerate(order) if x == fid]
         if not pos: warn.append(f"{fid}: no illustration scene uses this frame"); continue
-        if len(pos) > 2: warn.append(f"{fid}: carries {len(pos)} scenes; at most 2")
-        if pos[-1] - pos[0] + 1 != len(pos): warn.append(f"{fid}: used again after other scenes; plan a new frame")
-    return warn
+        if len(pos) > 2: err.append(f"{fid}: carries {len(pos)} scenes; at most 2")
+        if pos[-1] - pos[0] + 1 != len(pos): err.append(f"{fid}: used again after other scenes; plan a new frame")
+    return err, warn
 
 def ids(plan): return {x["id"] for g in GROUPS + ("frames",) for x in plan.get(g, []) if isinstance(x, dict) and "id" in x}
 

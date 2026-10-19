@@ -15,6 +15,21 @@ def final():
     os.makedirs("out", exist_ok=True); open("out/mock.mp4", "wb").write(b"0" * 1000)
     S.update(stage="upload_outputs", message="Outputs listed.", output=["long_video=out/mock.mp4"], warn=["No audio has been listened to"]); time.sleep(step)
     S.update(state="succeeded", message="Done.")
+if req.get("kind") == "series_plan":   # plan a series: a valid series.json, cp_series, then the plan as the output
+    def plan():
+        os.makedirs("series", exist_ok=True); sp = req["series_plan"]
+        eps = [{"n": i + 1, "title": f"Episode {i + 1}", "topic": f"{req['topic']}, part {i + 1}", "format": "explainer", "era": "present day",
+                "synopsis": f"Part {i + 1} of the mock series about {req['topic']}: what happened, why, and what came next."} for i in range(sp["episodes"])]
+        json.dump({"name": req["series"].get("name") or "Mock series", "premise": req["synopsis"], "cast": req["visuals"]["cast"], "episodes": eps}, open("series/series.json", "w"))
+        open("series/research.md", "w").write("# Research\n\nmock\n")
+        import subprocess; subprocess.run([sys.executable, "-m", "infogen", "series", "series/series.json"], check=True, stdout=subprocess.DEVNULL)
+    def deliver():
+        S.update(stage="upload_outputs", message="Plan listed.", output=["series_plan=series/series.json", "series_plan_pdf=series/series.pdf", "series_overview=series/series.md"]); time.sleep(step)
+        S.update(state="succeeded", message="Series planned.")
+    if mode == "start":
+        go([("setup", "Folders created."), ("script", "Series planned.")]); plan()
+        if chk: S.update(await_id="cp_series", question="Approve the series plan, or send changes?", review=["series/series.md", "series/series.json"]); sys.exit(0)
+    deliver(); sys.exit(0)
 if mode == "start":
     go(first)
     if "FAIL" in req["topic"]: S.update(state="failed", error_code="generation_failed", message="mock failure"); sys.exit(0)

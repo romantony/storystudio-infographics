@@ -48,6 +48,12 @@ try:
     c, b = call("POST", "/v1/infographics", dict(base, request_id="r0", format="podcast")); check("400 unknown format", c == 400 and b["error"]["field"] == "format", b)
     c, b = call("POST", "/v1/infographics", dict(base, request_id="r1", format="hour_by_hour", visuals={"style": "noir_vector", "cast": {"hero": "a man in a red cap"}})); check("202 accepted", c == 202 and b["job_id"].startswith("ig_"), b); j = b["job_id"]
     st_ = json.load(open(os.path.join(runs, j, "style.json"))); check("style.json written from the request", st_["preset"] == "noir_vector" and st_["cast"] == {"hero": "a man in a red cap"}, st_)
+    vis = json.load(open(os.path.join(runs, j, "request.json")))["visuals"]
+    check("visual budget defaults: 80 frames for 10 minutes, 8 characters, 8 objects, 8 backgrounds",
+          (vis["illustrations"], vis["characters"], vis["objects"], vis["backgrounds"], vis["animated_max_pct"], vis["animated_clips"]) == (80, 8, 8, 8, 20, 18), vis)
+    scale = subprocess.run([sys.executable, "-c", "from api.server import Req; mk = lambda **k: Req(request_id='x', topic='t', synopsis='s', callback={'url': 'https://h'}, **k).visuals.illustrations; "
+                            "print(mk(long={'target_seconds': 300}), mk(long={'target_seconds': 900}), mk(visuals={'illustrations': 12}))"], capture_output=True, text=True, cwd=ROOT, env=env)
+    check("frame budget scales with length (5 min 40, 15 min 120), an explicit value is kept", scale.stdout.split() == ["40", "120", "12"], scale.stdout + scale.stderr[-300:])
     c, b2 = call("POST", "/v1/infographics", dict(base, request_id="r1")); check("200 idempotent replay", c == 200 and b2["job_id"] == j, b2)
     c, b3 = call("POST", "/v1/infographics", dict(base, request_id="r2")); check("409 busy", c == 409 and b3["error"]["current_job_id"] == j, b3)
     s = wait_state(j, ["awaiting_input"]); check("checkpoint cp_script", s["awaiting"]["checkpoint_id"] == "cp_script" and s["stage"] == "script", s)
@@ -77,6 +83,22 @@ try:
     c, s = call("POST", f"/v1/infographics/{b['job_id']}/cancel"); check("cancel", s["state"] == "cancelled", s)
     time.sleep(1.0); check("cancelled job stays cancelled and frees the slot", call("GET", f"/v1/infographics/{b['job_id']}")[1]["state"] == "cancelled" and not call("GET", "/v1/health")[1]["busy"])
     check("health reports idle_seconds", "idle_seconds" in call("GET", "/v1/health")[1])
+    for secs, want in ((300, 202), (900, 202), (450, 400), (1800, 400)):
+        c, b = call("POST", "/v1/infographics", dict(base, request_id=f"d{secs}", long={"target_seconds": secs}, review_mode="auto"))
+        check(f"duration {secs} s: {want}", c == want and (want == 400 or b["job_id"]), b)
+        if c == 202: wait_state(b["job_id"], ["succeeded", "failed"])
+    c, b = call("POST", "/v1/infographics", dict(base, request_id="s1", kind="series_plan", topic="Cold War flashpoints", series={"name": "Flashpoints"},
+                                                 series_plan={"episodes": 12, "per_week": 3, "start_date": "2026-11-02"}))
+    check("series plan accepted", c == 202, b); sj = b["job_id"]
+    s = wait_state(sj, ["awaiting_input"]); check("series plan: cp_series checkpoint", s["awaiting"]["checkpoint_id"] == "cp_series", s)
+    plan = json.load(open(os.path.join(runs, sj, "series", "series.json")))
+    check("series plan: 12 episodes Mon/Wed/Fri from the start date, linked", len(plan["episodes"]) == 12 and [e["publish_date"] for e in plan["episodes"][:4]] == ["2026-11-02", "2026-11-04", "2026-11-06", "2026-11-09"]
+          and plan["episodes"][0]["next_title"] == "Episode 2" and plan["episodes"][-1]["next_title"] is None, plan["episodes"][:2])
+    rb = subprocess.run([sys.executable, "-c", "from api.server import start_prompt as p; print(p({'kind': 'series_plan'}).startswith('# Plan a series'), p({'kind': 'video'}).startswith('# Produce'))"],
+                        capture_output=True, text=True, cwd=ROOT, env=env)
+    check("series plan: runs the series runbook, a video the production one", rb.stdout.split() == ["True", "True"], rb.stdout + rb.stderr[-300:])
+    call("POST", f"/v1/infographics/{sj}/respond", {"checkpoint_id": "cp_series", "action": "approve"})
+    s = wait_state(sj, ["succeeded", "failed"]); check("series plan: succeeds with the plan as output", s["state"] == "succeeded" and [o["kind"] for o in s["outputs"]] == ["series_plan", "series_plan_pdf", "series_overview"], s)
     print(f"\nALL {ok} CHECKS PASSED")
 finally:
     srv.terminate(); shutil.rmtree(runs, ignore_errors=True)

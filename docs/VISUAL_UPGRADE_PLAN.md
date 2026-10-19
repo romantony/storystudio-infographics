@@ -1,6 +1,6 @@
 # Visual upgrade plan: grown-up flat-vector characters, reference-built scenes, selective LTX animation
 
-Draft, 2026-10-18. Status: Phase 1 (style.py, infogen 82a526e), the `qwen-image-edit` multi-image worker (Qwen-Edit c47143e, live) Phase 2 (visual plan: `infogen/visual_plan.py`, `queue` / `validate --plan`, runbook, 26e2bb0) Phase 3 (simple Wan2.2 animation within a hard cap: `infogen/animate.py`) and Phase 4 (visual facts for every topic: `research/visual_facts.json`, checked by `validate --plan` and `queue`) are done; Phase 5 is proposed.
+Draft, 2026-10-18. Status: Phase 1 (style.py, infogen 82a526e), the `qwen-image-edit` multi-image worker (Qwen-Edit c47143e, live) Phase 2 (visual plan: `infogen/visual_plan.py`, `queue` / `validate --plan`, runbook, 26e2bb0) Phase 3 (simple Wan2.2 animation within a hard cap: `infogen/animate.py`) Phase 4 (visual facts for every topic: `research/visual_facts.json`, checked by `validate --plan` and `queue`) and Phase 5 (budget: 50 to 80 frames per 10 minutes, 8 references of each kind, frame reuse an error, Wan clips 5 s, LTX hero shots 10 s; StoryStudio forwards every field) are done.
 
 ## Test results, 2026-10-18 (Berlin Airlift, about $0.25 in total, mostly cold starts)
 
@@ -172,6 +172,8 @@ Done as `research/visual_facts.json`, written for every project from its topic a
 3. **Image review:** check every asset on the contact sheet against `visual_facts.md`, item by item. Report how many were regenerated for era errors in a warning.
 
 ### Phase 5: budget
+
+Done. A 10-minute video has 50 to 80 frames, each on screen for 8 to 12 s (`validate` warns outside 7.5 to 12 s). `visuals.illustrations` is the cap: 80 per 10 minutes of the long video by default (at most 240), worked out from `long.target_seconds` in infogen's request model and in StoryStudio's `startForUser`. Wan clips are always 5 s; a frame with `"engine": "ltx"` is a 10 s LTX 2.3 hero shot at 720p, capped by `ltx_clips` (default 0) separately from the Wan cap; `characters` defaults to 8. `validate --plan` now rejects a frame that carries more than 2 scenes or comes back after other scenes. StoryStudio's `infographicMetadata` takes `objects`, `backgrounds`, `animatedMaxPct` and `animatedClips` (strict, like the others), both MCP servers list them, and the MCP guide §6.7 documents them. `ltx_clips` stays separate from `animated_clips`, which is the Wan ceiling. The original proposal:
 
 1. **Frames:** about 40–45 per 10 minutes (each covering 1–2 consecutive scenes), up from 24–26. Each is one edit job, about 15 s on an A40, or 2 jobs with a fourth ref.
 2. **References:** budgeted separately: characters (default 8), objects (default 8), backgrounds (default 8). Each is one `qwen-image-gen` job, about 8 s.

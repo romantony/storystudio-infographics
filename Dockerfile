@@ -37,7 +37,7 @@ RUN A=$([ "$TARGETARCH" = "arm64" ] && echo arm64 || echo x64) \
  && apt-get install -y --no-install-recommends /tmp/code.deb && rm -rf /tmp/code.deb /var/lib/apt/lists/*
 
 # --ignore-installed: Debian ships typing_extensions without pip metadata, so pip cannot upgrade it in place
-RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed fastapi uvicorn pydantic boto3
+RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed fastapi uvicorn pydantic boto3 fpdf2
 
 # ubuntu:24.04 ships a user with uid 1000; replace it so files on the volumes are owned by infogen
 RUN userdel -r ubuntu 2>/dev/null || true; useradd -m -u 1000 -s /bin/bash infogen \
@@ -51,6 +51,7 @@ USER root
 COPY --chown=infogen:infogen infogen/ /app/infogen/
 COPY --chown=infogen:infogen api/ /app/api/
 COPY --chown=infogen:infogen prompts/ /app/prompts/
+COPY --chown=infogen:infogen rubrics/ /app/rubrics/
 COPY --chown=infogen:infogen docs/ /app/docs/
 COPY --chown=infogen:infogen remotion/ /app/remotion/
 COPY deploy/supervisord.conf /etc/infogen/supervisord.conf

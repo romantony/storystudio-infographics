@@ -42,9 +42,10 @@ for name, needle in [("duplicate id", "used more than once"), ("unknown ref", "'
 check("unused reference is a warning", any("c54" in w for w in VP.check({**PLAN, "frames": PLAN["frames"][1:]})[1]))
 
 sc = lambda imgs: [{"type": "illustration", "image": i} for i in imgs]
-check("scene use: fine", VP.check_scenes(PLAN, sc(["f1", "f1", "f2", "f3"])) == [], VP.check_scenes(PLAN, sc(["f1", "f1", "f2", "f3"])))
-w = VP.check_scenes(PLAN, sc(["f1", "f2", "f1", "f2", "f2"]))
-check("scene use: reuse after other scenes, >2 scenes, unused frame", any("f1: used again" in x for x in w) and any("f2: carries 3" in x for x in w) and any("f3: no illustration" in x for x in w), w)
+check("scene use: fine", VP.check_scenes(PLAN, sc(["f1", "f1", "f2", "f3"])) == ([], []), VP.check_scenes(PLAN, sc(["f1", "f1", "f2", "f3"])))
+e, w = VP.check_scenes(PLAN, sc(["f1", "f2", "f1", "f2", "f2"]))
+check("scene use: reuse after other scenes and >2 scenes are errors, an unused frame a warning",
+      any("f1: used again" in x for x in e) and any("f2: carries 3" in x for x in e) and any("f3: no illustration" in x for x in w), (e, w))
 
 # ---- facts ----
 err, warn = VP.check_facts(PLAN, FACTS)
