@@ -39,7 +39,7 @@ If you cannot finish, run `status --state failed --error-code <generation_failed
 When `review_mode` is `checkpoints`, pause twice by raising a checkpoint and then ending your turn:
 
 - After the scripts are written and validated, and before anything paid is generated:
-  `status --await cp_script --question "Approve the scripts, or send changes?" --review script/script.json --review plan/visual_plan.json --review research/sources.md --review shorts/a_hook/script.json ...`
+  `status --await cp_script --question "Approve the scripts, or send changes?" --review script/script.json --review plan/visual_plan.json --review research/visual_facts.json --review research/sources.md --review shorts/a_hook/script.json ...`
 - After everything is built and uploaded:
   `status --await cp_final --question "Approve the final outputs?" --review out/youtube_metadata.md --review build/stills_<slug>.jpg`
 
@@ -69,15 +69,24 @@ These videos are built around one strong question and a relentless visual rhythm
 
 **Research.** Before writing, research the topic with WebSearch and WebFetch. Write `research/sources.md`: every number, date and claim you will use, each with its source (publisher, title, year, URL). Prefer primary and official sources (statistics agencies, company filings, peer-reviewed papers, major newspapers). Numbers on screen come only from this file. If a number cannot be sourced, do not show it. If the topic is breaking news, say in a warning how fresh the sources are.
 
+**Visual facts.** Every project, whatever its topic, also gets `research/visual_facts.json` (format: the docstring of `/app/infogen/visual_plan.py`). It records what the things on screen really look like, so the pictures match the story's time and place instead of the model's defaults:
+1. **From the topic and synopsis,** settle the `era`: the time and place the pictures show, for example `"Berlin, 1948-49"`, `"Chernobyl, Soviet Ukraine, April 1986"` or `"present day, United States"`.
+2. **List everything concrete the story will show:** people and their roles (uniforms, work clothes, everyday dress of the period), vehicles, aircraft, ships, weapons, machines, tools and devices, buildings, landmarks and landscapes, animals and plants, products and brands of the time, and for a body or science topic the organs, cells or instruments. Go through the synopsis and your outline beat by beat. Anything that will be drawn more than once, or that a viewer would notice if it were wrong, gets an entry.
+3. **Research each one** with WebSearch and WebFetch, from museums, archives, manufacturers, encyclopaedias or period photos, and write one entry: the exact `name` and type, `looks` (one line of visible features a picture can show: shape, count of parts, colours, materials, size against a person), `avoid` (what a model would wrongly draw instead: the modern version, a better-known lookalike) and the `source`.
+   - For a present-day topic, still describe the current version ("a 2020s US police cruiser: white Ford Explorer SUV, black push bar, light bar on the roof").
+   - For a `what_if` or future scenario, describe real things as they are now; mark anything invented with the source `"invented for the scenario"` and give it a fixed description.
+
+Never write a generic type ("a cargo plane", "a soldier", "a hospital") where the story has a specific one.
+
 **Style and cast.** `style.json` is written from the request. After the research, add to it:
-- `era`: the time and place the pictures must match, for example `"Berlin, 1948-49"`, or `"present day"` for a modern topic.
+- `era`: the same as in `research/visual_facts.json`.
 - `palette_prompt`: a colour line that suits the period, for example `"muted 1940s palette of olive green, khaki, slate blue, warm grey and cream"`.
 
 Both are added to every image prompt.
 
-If its `cast` is empty and the story has people, add one to three recurring characters with a fixed, specific visual description (age, period-correct clothing, hair, one colour accent) and use them as `{id}` in every character and scene prompt, so they look the same throughout. Draw people at real proportions; the style already says so, so do not ask for cute, big-headed or chibi figures. Do not base a character on a real, identifiable person.
+If its `cast` is empty and the story has people, add one to three recurring characters with a fixed, specific visual description (age, clothing from the visual facts, hair, one colour accent) and use them as `{id}` in every character and scene prompt, so they look the same throughout. Draw people at real proportions; the style already says so, so do not ask for cute, big-headed or chibi figures. Do not base a character on a real, identifiable person.
 
-For a historical topic, also give every vehicle, aircraft, weapon and uniform in a prompt its period-correct type and a short visual description (for example "a Douglas C-54 Skymaster: four propeller engines, single tall tail fin, bare aluminium"). Never write just "a cargo plane" or "a military truck": the model fills in a modern one.
+In every prompt, name things by their specific type from the visual facts ("the C-54"), never just "a cargo plane" or "a military truck": the model fills in a modern or generic one.
 
 **Script.** Write `script/script.json` (format: `python3 -m infogen build` docstring and `/app/docs/SCENES.md`). Narration runs at about 2.6 words per second, so `target_seconds` of 600 means about 1,550 words. Set `narrator_voice` from the request, `captions` from `visuals.captions_long`, `series` and `next` from the series details, and a `chapter` on the first scene of each section (at least three). Put `"verify": true` and a `verify_note` naming the source on every scene that states a number, date, quotation or causal claim, and a short `source` on every data scene (it is shown on screen). Do not present a paraphrase as a quotation.
 
@@ -85,8 +94,9 @@ Then write the Shorts in `shorts/<id>/script.json`, one per requested angle (`a_
 
 **Visual plan.** Write `plan/visual_plan.json` (format: the docstring of `/app/infogen/visual_plan.py`) at the same time as the script, so the checkpoint covers both. Every illustration scene shows a **frame**, and every frame is composed from **references** drawn in one style:
 - `characters`: every recurring person or group, as `{id}` from `cast` plus a neutral pose. One reference per person, reused in every frame.
-- `objects`: every recurring vehicle, aircraft, weapon or prop, with its period-correct type and a short visual description.
+- `objects`: every recurring vehicle, aircraft, weapon or prop, with its specific type.
 - `backgrounds`: every recurring place, as an **empty** set with no people and room for figures.
+- Every object and background lists the visual facts it is drawn from in `facts` (ids from `research/visual_facts.json`); so do characters in a uniform or period dress, and frames with no background that show a specific thing. The facts' `looks` are added to the prompt automatically, so the prompt itself can stay short. `validate --plan` rejects a missing facts file, an object or background that cites none, and an unknown id.
 - `frames`: one per visual beat. Each has:
   - its `background` and up to 3 `refs`, characters or objects by id;
   - a `prompt` with the action and the placement. Say where each figure stands and how big it is, for example "the pilot stands on the left, fully visible, about half the frame height".
@@ -144,9 +154,9 @@ If the plan has an `anchor` prompt because there is no anchor image, the first `
 - shows text or extra limbs;
 - drifts from the cast description;
 - uses gradients, lighting or a painterly, 3D or chibi look;
-- shows anything out of period: check every vehicle, aircraft, uniform, weapon and building against `era`.
+- does not match its visual facts: check every reference, item by item, against the `looks` of each fact it cites, and that nothing on the fact's `avoid` list appears (count the engines, the wheels, the tail fins; look at the uniform's colour and cut). Check every frame, and everything else in it, against `era`.
 
-Count the regenerations made for era errors in a warning.
+Report the regenerations made for accuracy errors in a warning: "accuracy: <n> of <m> references and <k> frames regenerated for visual-fact errors".
 
 Check each cut-out on the sheet: a character missing parts or with a background fringe gets `cutout <id> --tol 40` or a regeneration.
 

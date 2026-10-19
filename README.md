@@ -20,7 +20,7 @@ a config-driven toolkit and a small API that an orchestrator drives.
 
 ## How a video is made
 
-1. **Research and script** (Claude): sources first (`research/sources.md`), then `script/script.json`: 70 to 90 scenes for 10 minutes, each one visual beat of 4 to 10 seconds, every reveal tied to a word (`cue`). `validate` checks it.
+1. **Research and script** (Claude): sources first (`research/sources.md`) and what everything on screen looks like (`research/visual_facts.json`, from the topic and synopsis), then `script/script.json`: 70 to 90 scenes for 10 minutes, each one visual beat of 4 to 10 seconds, every reveal tied to a word (`cue`). `validate` checks it.
 2. **Art** (`queue`): scene illustrations and character poses from Qwen, wrapped in the series style (`style.json`: preset, palette, era, recurring cast described once). Characters are generated on plain white and cut out automatically. Music from ACE-Step. Optional LTX animations.
 3. **Voice** (`tts`, `timings`): Gemini TTS per scene, Whisper word timings.
 4. **Motion graphics** (`build`): each scene is rendered by Remotion from data at its exact narration length, cached by content; `--stills` gives a contact sheet to review before the full render.

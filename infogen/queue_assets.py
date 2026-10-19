@@ -35,9 +35,10 @@ def main(cmd, argv):
     failed, warnings = [], []
     if VP.is_plan(spec):   # a visual plan (plan/visual_plan.json): anchor -> references -> frames -> animations
         visuals = json.load(open("request.json")).get("visuals", {}) if os.path.exists("request.json") else None
-        err, _ = VP.check(spec, visuals)
+        facts = VP.load_facts(); err = VP.check(spec, visuals)[0] + VP.check_facts(spec, facts)[0]
         if err: sys.exit("visual plan has errors (run validate --plan):\n" + "\n".join(err))
-        VP.run(spec, st_, st, save, pid, only & PLAN_STAGES, failed)
+        if not st_.get("era"): st_["era"] = facts["era"]
+        VP.run(spec, st_, st, save, pid, only & PLAN_STAGES, failed, facts)
         if "animate" in only: AN.run(spec, st, save, pid, visuals, failed, warnings)
         only -= {"images", "characters"}   # the plan's own "characters" are references, not old-style text-to-image poses
 

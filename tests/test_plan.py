@@ -14,12 +14,16 @@ def check(name, cond, got=None):
 
 PLAN = {"project_id": "t",
         "characters": [{"id": "pilot", "label": "the pilot", "prompt": "{pilot}, smiling"}, {"id": "kids", "label": "the children", "prompt": "three children", "aspect": "16:9"}],
-        "objects": [{"id": "c54", "label": "the transport plane", "prompt": "a C-54 in side view"}],
-        "backgrounds": [{"id": "field", "prompt": "an empty 1948 airfield"}],
+        "objects": [{"id": "c54", "label": "the transport plane", "prompt": "a C-54 in side view", "facts": ["c54"]}],
+        "backgrounds": [{"id": "field", "prompt": "an empty 1948 airfield", "facts": ["tempelhof"]}],
         "frames": [{"id": "f1", "background": "field", "refs": ["pilot", "kids", "c54"], "prompt": "the pilot waves on the left; the children watch on the right",
                     "add": "the plane flies low in the upper sky"},
                    {"id": "f2", "background": "field", "refs": ["pilot"], "prompt": "the pilot walks to the plane"},
-                   {"id": "f3", "prompt": "a close-up of a ration card"}]}
+                   {"id": "f3", "prompt": "a close-up of a ration card", "facts": ["ration_card"]}]}
+FACTS = {"era": "Berlin, 1948", "items": [
+    {"id": "c54", "kind": "aircraft", "name": "Douglas C-54 Skymaster", "looks": "four radial propeller engines, single tall tail fin", "avoid": "jet engines", "source": "NASM"},
+    {"id": "tempelhof", "kind": "place", "name": "Tempelhof airport", "looks": "a long curved terminal building", "source": "Berlin.de"},
+    {"id": "ration_card", "kind": "object", "name": "a 1948 Berlin ration card", "looks": "a grey paper card with a grid of coupons", "source": "DHM"}]}
 
 # ---- check ----
 err, warn = VP.check(PLAN, {"characters": 6, "objects": 8, "backgrounds": 8, "illustrations": 24})
@@ -42,10 +46,22 @@ check("scene use: fine", VP.check_scenes(PLAN, sc(["f1", "f1", "f2", "f3"])) == 
 w = VP.check_scenes(PLAN, sc(["f1", "f2", "f1", "f2", "f2"]))
 check("scene use: reuse after other scenes, >2 scenes, unused frame", any("f1: used again" in x for x in w) and any("f2: carries 3" in x for x in w) and any("f3: no illustration" in x for x in w), w)
 
+# ---- facts ----
+err, warn = VP.check_facts(PLAN, FACTS)
+check("facts: valid, all cited", (err, warn) == ([], []), (err, warn))
+check("facts: missing file is an error", "visual_facts.json is missing" in VP.check_facts(PLAN, None)[0][0])
+badp = json.loads(json.dumps(PLAN)); badp["objects"][0]["facts"] = []; badp["frames"][1]["facts"] = ["c47"]
+badf = {"items": FACTS["items"] + [{"id": "c47", "name": "Douglas C-47"}, {"id": "spare", "name": "x", "looks": "y", "source": "z"}]}
+err, warn = VP.check_facts(badp, {"items": badf["items"][:3] + badf["items"][4:]})
+for name, needle in [("no era", 'needs an "era"'), ("object cites nothing", "c54: cite the fact"), ("unknown fact", "fact 'c47' is not in")]:
+    check(f"facts catch: {name}", any(needle in e for e in err), err)
+check("facts: uncited fact is a warning", any("fact spare" in w for w in warn) and any("fact c54" in w for w in warn), warn)
+check("facts: entry needs looks and source", any("fact c47: needs \"looks\"" in e for e in VP.check_facts(PLAN, {"era": "x", "items": badf["items"]})[0]))
+
 # ---- run, against a fake RunPod ----
 tmp = tempfile.mkdtemp(); os.chdir(tmp)
-json.dump({"era": "Berlin, 1948", "cast": {"pilot": "a US transport pilot in a leather jacket"}}, open("style.json", "w"))
-json.dump(PLAN, open("plan.json", "w"))
+json.dump({"cast": {"pilot": "a US transport pilot in a leather jacket"}}, open("style.json", "w"))   # era comes from the facts
+json.dump(PLAN, open("plan.json", "w")); os.makedirs("research"); json.dump(FACTS, open(VP.FACTS, "w"))
 calls = []
 def png():
     im = Image.new("RGB", (300, 400), "white"); ImageDraw.Draw(im).rectangle((100, 80, 200, 360), fill=(90, 60, 40), outline="black", width=4)
@@ -71,6 +87,9 @@ check("refs: character prompt draws a new person in the anchor's style, cast and
       by["pilot"]["prompt"].startswith("Draw a new picture in exactly the same flat vector style as image 1") and "leather jacket" in by["pilot"]["prompt"]
       and "historically accurate for Berlin, 1948" in by["pilot"]["prompt"] and "Do not include anyone from image 1" in by["pilot"]["prompt"], by["pilot"]["prompt"])
 check("refs: object and background prompts", "shows only a C-54" in by["c54"]["prompt"] and "empty setting: an empty 1948 airfield" in by["field"]["prompt"], (by["c54"]["prompt"], by["field"]["prompt"]))
+check("refs: cited facts' looks in the prompt, avoid left out",
+      "shows only a C-54 in side view (Douglas C-54 Skymaster: four radial propeller engines, single tall tail fin), plain white" in by["c54"]["prompt"]
+      and "jet" not in by["c54"]["prompt"] and "long curved terminal" in by["field"]["prompt"], by["c54"]["prompt"])
 check("refs: aspect per kind, plan override", (by["pilot"]["aspect_ratio"], by["kids"]["aspect_ratio"], by["c54"]["aspect_ratio"], by["field"]["aspect_ratio"]) == ("3:4", "16:9", "16:9", "16:9"))
 check("refs: characters and objects cut out, backgrounds not", all(os.path.exists(f"assets/cutouts/{i}.png") for i in ("pilot", "kids", "c54")) and not os.path.exists("assets/cutouts/field.png"))
 
@@ -89,7 +108,8 @@ check("f1: pass 1 names the refs by label and image number", "Place the pilot fr
 e, f2 = by["f2"]
 check("f2: one ref, one pass", f2["image_urls"] == [url("field"), url("pilot")] and len(f2["passes"]) == 1, f2)
 e, f3 = by["f3"]
-check("f3: no background -> text-to-image", e == "qwen" and f3["model"] == "qwen" and "close-up of a ration card" in f3["prompt"], (e, f3))
+check("f3: no background -> text-to-image, with its facts", e == "qwen" and f3["model"] == "qwen" and "close-up of a ration card" in f3["prompt"]
+      and "grid of coupons" in f3["prompt"], (e, f3))
 
 # a frame whose references failed is not submitted
 os.remove("assets/kids.png"); st["kids"]["error"] = "boom"; st["kids"].pop("url"); json.dump(st, open("build/queue_state.json", "w"))
@@ -102,6 +122,7 @@ check("frames with a missing ref: not submitted, run fails", [i["frame_id"] for 
 # generated anchor: no anchor image for the preset -> the plan's anchor prompt; first run stops after it
 tmp2 = tempfile.mkdtemp(); os.chdir(tmp2)
 json.dump({"preset": "noir_vector", "cast": {"pilot": "a US transport pilot in a leather jacket"}}, open("style.json", "w"))
+os.makedirs("research"); json.dump(FACTS, open(VP.FACTS, "w"))
 json.dump({**PLAN, "anchor": {"prompt": "a man in a trench coat"}}, open("plan.json", "w"))
 calls.clear(); q()
 check("generated anchor: first run makes only the anchor", [(e, i["frame_id"]) for e, i in calls] == [("qwen", "style_anchor")], calls)
@@ -111,18 +132,26 @@ json.dump(PLAN, open("plan.json", "w")); calls.clear()
 try: q("refs"); code = 0
 except SystemExit as x: code = str(x.code)
 check("no anchor anywhere: clear error", "no style anchor" in str(code), code)
+os.remove(VP.FACTS)
+try: q("refs"); code = 0
+except SystemExit as x: code = str(x.code)
+check("queue without visual facts: refused", "visual_facts.json is missing" in code, code)
 
 # ---- validate --plan end to end ----
 tmp3 = tempfile.mkdtemp(); os.chdir(tmp3); os.makedirs("script"); os.makedirs("plan")
 json.dump({"title": "t", "scenes": [{"n": 1, "type": "illustration", "image": "f1", "narration": "The pilot waves at the children by the fence."},
                                     {"n": 2, "type": "illustration", "image": "f2", "narration": "Then he walks back to his plane."}]}, open("script/script.json", "w"))
-json.dump(PLAN, open("plan/visual_plan.json", "w"))
+json.dump(PLAN, open("plan/visual_plan.json", "w")); os.makedirs("research"); json.dump(FACTS, open(VP.FACTS, "w"))
 json.dump({"visuals": {"illustrations": 24, "characters": 6, "objects": 8, "backgrounds": 8}}, open("request.json", "w"))
 env = {**os.environ, "PYTHONPATH": ROOT}
 r = subprocess.run([sys.executable, "-m", "infogen", "validate", "--plan", "plan/visual_plan.json"], capture_output=True, text=True, env=env)
 out = json.loads(r.stdout) if r.stdout.strip().startswith("{") else {}
 check("validate --plan: frame ids count as planned assets, passes", r.returncode == 0 and out.get("errors") == [], (r.returncode, r.stdout[-600:], r.stderr[-600:]))
 check("validate --plan: unused frame reported", any("f3: no illustration scene" in w for w in out.get("warnings", [])), out.get("warnings"))
+os.rename(VP.FACTS, "facts.bak")
+r = subprocess.run([sys.executable, "-m", "infogen", "validate", "--plan", "plan/visual_plan.json"], capture_output=True, text=True, env=env)
+check("validate --plan: missing visual facts fails", r.returncode == 1 and "visual_facts.json is missing" in r.stdout, r.stdout[-400:])
+os.rename("facts.bak", VP.FACTS)
 json.dump({"visuals": {"illustrations": 2}}, open("request.json", "w"))
 r = subprocess.run([sys.executable, "-m", "infogen", "validate", "--plan", "plan/visual_plan.json"], capture_output=True, text=True, env=env)
 check("validate --plan: over budget fails", r.returncode == 1 and "visuals.illustrations" in r.stdout, r.stdout[-400:])

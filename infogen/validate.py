@@ -4,7 +4,8 @@ python3 -m infogen validate [--short <id>] [--assets assets.json] [--plan plan/v
 Reports: unknown scene types, missing template fields, cues that are not in the narration, data scenes without a
 source, long scenes (a visual change every 4 to 10 seconds is the format), pictures used too often, the estimated length
 against the target, and image ids that neither exist nor are in assets.json or the visual plan. With --plan, also the
-plan itself (ids, references per frame, the budget in request.json) and how the scenes use its frames. Exit code 1 on
+plan itself (ids, references per frame, the budget in request.json), research/visual_facts.json and the facts the
+plan cites, and how the scenes use its frames. Exit code 1 on
 errors, 0 with warnings."""
 import json, os, sys
 from collections import Counter
@@ -28,7 +29,7 @@ def main(cmd, argv):
     if "--plan" in argv:
         P = json.load(open(argv[argv.index("--plan") + 1]))
         visuals = json.load(open("request.json")).get("visuals", {}) if os.path.exists("request.json") else None
-        pe, pw = VP.check(P, visuals); err += [f"plan: {e}" for e in pe]; warn += [f"plan: {w}" for w in pw]
+        pe, pw = VP.check(P, visuals); fe, fw = VP.check_facts(P, VP.load_facts()); pe += fe; pw += fw; err += [f"plan: {e}" for e in pe]; warn += [f"plan: {w}" for w in pw]
         if not sid: warn += [f"plan: {w}" for w in VP.check_scenes(P, sc)]   # Shorts reuse the long video's frames
         planned |= VP.ids(P)
     seen = Counter()

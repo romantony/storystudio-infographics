@@ -1,6 +1,6 @@
 # Visual upgrade plan: grown-up flat-vector characters, reference-built scenes, selective LTX animation
 
-Draft, 2026-10-18. Status: Phase 1 (style.py, infogen 82a526e), the `qwen-image-edit` multi-image worker (Qwen-Edit c47143e, live) Phase 2 (visual plan: `infogen/visual_plan.py`, `queue` / `validate --plan`, runbook, 26e2bb0) and Phase 3 (simple Wan2.2 animation within a hard cap: `infogen/animate.py`) are done; Phases 4–5 are proposed.
+Draft, 2026-10-18. Status: Phase 1 (style.py, infogen 82a526e), the `qwen-image-edit` multi-image worker (Qwen-Edit c47143e, live) Phase 2 (visual plan: `infogen/visual_plan.py`, `queue` / `validate --plan`, runbook, 26e2bb0) Phase 3 (simple Wan2.2 animation within a hard cap: `infogen/animate.py`) and Phase 4 (visual facts for every topic: `research/visual_facts.json`, checked by `validate --plan` and `queue`) are done; Phase 5 is proposed.
 
 ## Test results, 2026-10-18 (Berlin Airlift, about $0.25 in total, mostly cold starts)
 
@@ -100,7 +100,7 @@ script ──► visual plan ──► references (qwen-image-gen) ──► fra
                      "prompt": "the pilot stands left by a parked C-54 waving up; the children stand right behind a wire fence, one pointing at the C-54 coming in to land",
                      "animate": {"prompt": "the pilot waves slowly; the girl's pointing arm follows the plane; the plane glides right, descending; propellers spin", "secs": 5}}]}
    ```
-   - **Characters, objects and backgrounds** are drawn from the script and `research/visual_facts.md` (Phase 4). Every recurring person, vehicle, aircraft and location gets exactly one reference.
+   - **Characters, objects and backgrounds** are drawn from the script and `research/visual_facts.json` (Phase 4). Every recurring person, vehicle, aircraft and location gets exactly one reference.
    - **Frames:** one per visual beat. A frame may carry up to 2 consecutive scenes with different crops (Phase 5). It names its background and up to 3 refs, describes the action, and, only when chosen (Phase 3), has an `animate` block.
    - **`validate --plan`** checks the plan before anything is paid for:
      - every id a frame uses exists;
@@ -163,7 +163,9 @@ script ──► visual plan ──► references (qwen-image-gen) ──► fra
      - StoryStudio stores the cap per job, so cost can be checked against it.
    - **Shorts:** reuse the long video's clips, cropped to 9:16, and generate no new LTX.
 
-### Phase 4: period accuracy
+### Phase 4: period accuracy, for every topic
+
+Done as `research/visual_facts.json`, written for every project from its topic and synopsis (historical, present day or scenario), not only for Berlin. Each entry has `name`, `looks`, optional `avoid` and `source`. Plan references and frames cite entries in `facts`; their `looks` are added to the prompt, every object and background must cite one, and `validate --plan` and `queue` refuse a plan without the file. The original proposal:
 
 1. **During research, write `research/visual_facts.md`:** for the place and date, the vehicles, aircraft, uniforms, weapons, buildings and landmarks, each with a one-line visual description and a source. For example: *"C-47 Skytrain: twin radial engines, tail-dragger; C-54 Skymaster: four radial engines, tricycle gear, single tall fin"*.
 2. **Turn those into sheets and cast** (Phase 2), so the right equipment comes from a reference rather than from the model's memory.

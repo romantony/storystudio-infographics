@@ -4,8 +4,8 @@ every illustration frame composed from them. Scenes use a frame by id ("image": 
 plan/visual_plan.json:
 { "project_id": "berlin_airlift",
   "characters":  [{"id": "pilot_us", "label": "the pilot", "prompt": "{pilot_us}, smiling, arms relaxed", "aspect": "3:4"}],
-  "objects":     [{"id": "c54", "label": "the transport plane", "prompt": "{c54} in side view, flying level"}],
-  "backgrounds": [{"id": "tempelhof", "prompt": "an empty 1948 Tempelhof airfield: apron, runway, a wire fence on the right ..."}],
+  "objects":     [{"id": "c54", "label": "the transport plane", "prompt": "the plane in side view, flying level", "facts": ["c54"]}],
+  "backgrounds": [{"id": "tempelhof", "prompt": "an empty 1948 Tempelhof airfield: apron, runway, a wire fence on the right ...", "facts": ["tempelhof"]}],
   "frames":      [{"id": "f012", "background": "tempelhof", "refs": ["pilot_us", "kids_berlin", "c54"],
                    "prompt": "the pilot stands on the left, fully visible at about half the frame height, waving up; the children stand behind the fence on the right ...",
                    "add": "the plane flies low in the upper sky, coming in to land, small against the sky"}] }
@@ -19,10 +19,21 @@ plan/visual_plan.json:
 - A frame is one qwen-image-edit job: image 1 is its background, images 2-3 its first two refs; a third ref is added in
   a second pass, described by `add`. A frame with no background is text-to-image from its prompt and takes no refs.
 - `label` is how a prompt names the reference ("the pilot"); default: the id with spaces.
+- `facts` on a reference or frame names entries of research/visual_facts.json; their `looks` are added to its prompt, so
+  the model draws the right thing rather than its default one. Every object and background cites at least one.
+
+research/visual_facts.json, written during research from the topic and synopsis, for every topic (historical, present
+day or a scenario): what each person, place and thing the video shows really looks like, at the story's time and place.
+{ "era": "Berlin, 1948-49",
+  "items": [{"id": "c54", "kind": "aircraft", "name": "Douglas C-54 Skymaster",
+             "looks": "four radial propeller engines, tricycle landing gear, single tall tail fin, bare aluminium",
+             "avoid": "jet engines, two engines", "source": "Smithsonian NASM, Douglas C-54 Skymaster"}] }
+`avoid` (optional) is what models tend to draw instead; it is for the image review, not the prompt.
+
 - `animate` on a frame animates it with Wan2.2, within the request's cap: see infogen/animate.py. Keep it simple.
 
 python3 -m infogen queue plan/visual_plan.json [--only anchor,refs,frames,animate]
-python3 -m infogen validate --plan plan/visual_plan.json      (with the script checks; budget from request.json)"""
+python3 -m infogen validate --plan plan/visual_plan.json      (with the script checks; budget from request.json, facts from research/)"""
 import base64, io, json, os, re, sys
 from PIL import Image
 from . import animate as AN, cutout, rp, style as STY
@@ -34,6 +45,10 @@ BUDGET = {"characters": ("characters", 6), "objects": ("objects", 8), "backgroun
 ID = re.compile(r"[A-Za-z0-9_]+$")
 SAME_STYLE = ("in exactly the same flat vector style as image 1: the same line weight, the same flat colour fills with no shading, "
               "the same simple face style and the same realistic body proportions")
+
+FACTS = "research/visual_facts.json"
+
+def load_facts(path=FACTS): return json.load(open(path)) if os.path.exists(path) else None
 
 def is_plan(spec): return isinstance(spec, dict) and "frames" in spec
 
@@ -80,6 +95,39 @@ def check(plan, visuals=None):
         if r not in used: warn.append(f"{r}: no frame uses it (it is still paid for)")
     return err, warn
 
+def check_facts(plan, facts):
+    """(errors, warnings) for research/visual_facts.json and the plan's `facts` citations."""
+    if facts is None: return [f"{FACTS} is missing: write it during research, from the topic and synopsis (see infogen/visual_plan.py)"], []
+    err, warn = [], []
+    if not str(facts.get("era", "")).strip(): err.append('facts: needs an "era", the time and place the pictures match (or "present day, <place>")')
+    items = facts.get("items") if isinstance(facts.get("items"), list) else []
+    if not items: err.append('facts: needs a non-empty "items" list')
+    known = set()
+    for i, x in enumerate(items):
+        if not isinstance(x, dict) or not ID.match(str(x.get("id", ""))): err.append(f"facts.items[{i}]: needs an \"id\" of letters, digits and _"); continue
+        known.add(x["id"])
+        for k in ("name", "looks", "source"):
+            if not str(x.get(k, "")).strip(): err.append(f"fact {x['id']}: needs \"{k}\"")
+    cited = set()
+    for g in GROUPS + ("frames",):
+        for x in plan.get(g, []):
+            if not isinstance(x, dict) or "id" not in x: continue
+            fs = x.get("facts", [])
+            if not isinstance(fs, list): err.append(f"{x['id']}: facts must be a list"); continue
+            for f in fs:
+                if f not in known: err.append(f"{x['id']}: fact {f!r} is not in {FACTS}")
+            cited |= set(fs)
+            if g in ("objects", "backgrounds") and not fs: err.append(f"{x['id']}: cite the fact(s) it is drawn from in \"facts\"")
+    for f in sorted(known - cited): warn.append(f"fact {f}: no reference or frame cites it")
+    return err, warn
+
+def facts_desc(x, facts):
+    """'<name>: <looks>; ...' for the facts a reference or frame cites, else ''."""
+    by = {f["id"]: f for f in (facts or {}).get("items", []) if isinstance(f, dict) and "id" in f}
+    return "; ".join(f"{by[i]['name']}: {by[i]['looks']}" for i in x.get("facts", []) if i in by)
+
+def facts_line(x, facts): d = facts_desc(x, facts); return f" Accurate details: {d}." if d else ""
+
 def check_scenes(plan, scenes):
     """Warnings for how the script uses the frames: unused frames, a frame carrying more than 2 scenes, a frame used again
     after other scenes came between (one picture = one visual beat, at most two consecutive scenes with different crops)."""
@@ -112,8 +160,8 @@ def anchor_source(plan, st):
     if not plan.get("anchor"): sys.exit("no style anchor: set `anchor` in style.json, or add \"anchor\": {\"prompt\": ...} to the plan")
     return None, "style_anchor"
 
-def ref_prompt(group, r, st):
-    body = STY.expand(r["prompt"], st)
+def ref_prompt(group, r, st, facts=None):
+    d = facts_desc(r, facts); body = STY.expand(r["prompt"], st) + (f" ({d})" if d else "")
     era = f" Everything historically accurate for {st['era']}." if st.get("era") else ""
     tail = f" {st['palette_prompt'][0].upper() + st['palette_prompt'][1:]}.{era} No text, no letters, no logos."
     if group == "characters":
@@ -133,14 +181,14 @@ def blank(aspect):
     b = io.BytesIO(); Image.new("RGB", (round(W / 32) * 32, round(W / ratio / 32) * 32), "white").save(b, "PNG")
     return base64.b64encode(b.getvalue()).decode()
 
-def frame_passes(f, refs, st):
+def frame_passes(f, refs, st, facts=None):
     rs = [refs[r][1] for r in f.get("refs", [])]
     era = f" Everything historically accurate for {st['era']}." if st.get("era") else ""
     look = f" Same flat vector style, flat colours, bold outlines, no gradients, {st['palette_prompt']}.{era} No text, no letters."
     placed = "; ".join(f"{label(r)} from image {i + 2}" for i, r in enumerate(rs[:2]))
     p1 = ("Flat vector infographic scene in the same style as the reference images. Use image 1 as the setting and keep it. "
           + (f"Place {placed}, keeping their exact faces, outfits, proportions and colours unchanged. " if placed else "")
-          + f"{STY.expand(f['prompt'], st)}. Every figure is fully inside the frame at a natural size for the setting, no extra people."
+          + f"{STY.expand(f['prompt'], st)}.{facts_line(f, facts)} Every figure is fully inside the frame at a natural size for the setting, no extra people."
           # frames to be animated: a distorted, crowded or wrong-facing frame becomes a distorted clip
           + (" Composed for animation: every figure large, fully visible and clearly separated, clean hands and faces, nothing overlapping a figure, "
              "open space in the direction any subject will move." if f.get("animate") else "")
@@ -151,7 +199,7 @@ def frame_passes(f, refs, st):
                                  f"{STY.expand(f['add'], st)}.{look}"})
     return passes
 
-def run(plan, st, state, save, pid, only, failed):
+def run(plan, st, state, save, pid, only, failed, facts=None):
     """Queue the anchor (if generated), then references, then frames; each stage waits for the one before. Resumable:
     a finished file is skipped, a queued job is not resubmitted."""
     path = lambda i: f"{ASSETS}/{i}.png"
@@ -187,7 +235,7 @@ def run(plan, st, state, save, pid, only, failed):
         for g in GROUPS:
             for r in plan.get(g, []):
                 ar = r.get("aspect", "3:4" if g == "characters" else "16:9")
-                jobs[r["id"]] = ("qedit", {"image_urls": [blank(ar), anchor] if g == "backgrounds" else [anchor], "prompt": ref_prompt(g, r, st),
+                jobs[r["id"]] = ("qedit", {"image_urls": [blank(ar), anchor] if g == "backgrounds" else [anchor], "prompt": ref_prompt(g, r, st, facts),
                                            "aspect_ratio": ar, **base, "frame_id": r["id"]})
         stage(jobs)
         for g in ("characters", "objects"):
@@ -203,9 +251,9 @@ def run(plan, st, state, save, pid, only, failed):
             missing = [i for i in need if not url(i)]
             if missing: failed.append(f["id"]); print("FAIL", f["id"], "references not ready:", ", ".join(missing), flush=True); continue
             if not f.get("background"):
-                jobs[f["id"]] = ("qwen", {"model": "qwen", "prompt": STY.image_prompt(f["prompt"], st), "aspect_ratio": f.get("aspect", "16:9"), **base, "frame_id": f["id"]})
+                jobs[f["id"]] = ("qwen", {"model": "qwen", "prompt": STY.image_prompt(f["prompt"] + facts_line(f, facts), st), "aspect_ratio": f.get("aspect", "16:9"), **base, "frame_id": f["id"]})
                 continue
-            passes = frame_passes(f, refs, st)
+            passes = frame_passes(f, refs, st, facts)
             if len(passes) > 1: passes[1]["image_urls"] = [url(f["refs"][2])]
             jobs[f["id"]] = ("qedit", {"image_urls": [url(i) for i in need[:MAX_IMAGES]], "passes": passes, "aspect_ratio": f.get("aspect", "16:9"), **base, "frame_id": f["id"]})
         stage(jobs)
