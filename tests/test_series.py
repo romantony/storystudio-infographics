@@ -31,6 +31,16 @@ check("check: formats limited by the request", any("format must be one of versus
 same = {**PLAN, "episodes": [ep(i, format="explainer") for i in range(1, 7)]}
 check("check: one format across 6 episodes is a warning", any("only 1 format" in w for w in SE.check(same, {**REQ, "series_plan": {"episodes": 6}})[1]))
 
+AUTO = {**REQ, "visuals": {"style": "auto", "palette": "auto", "cast": REQ["visuals"]["cast"]}}
+err, _ = SE.check(PLAN, AUTO)
+check("auto: the plan must choose style, palette and say why", any('choose "style"' in e for e in err) and any('choose "palette"' in e for e in err) and any("style_why" in e for e in err), err)
+picked = {**PLAN, "style": "paper", "palette": {"accent": "#9C3D22", "landHi": "#9C3D22"}, "style_why": "1940s-60s history"}
+check("auto: a readable choice passes", SE.check(picked, AUTO) == ([], []), SE.check(picked, AUTO))
+check("auto: an unreadable one is refused", any("text on bg" in e for e in SE.check({**picked, "palette": {"text": "#EEE8DD"}}, AUTO)[0]))
+check("not auto: the plan may not change the request's style", any('"style": the request sets paper' in e for e in SE.check({**PLAN, "style": "noir_vector"}, REQ)[0]))
+filled = SE.fill(json.loads(json.dumps(picked)), {**AUTO, "visuals": {"style": "auto", "palette": {"accent2": "#123456"}, "cast": {}}})
+check("fill: the chosen style kept, the request's fixed colours merged in and winning", filled["style"] == "paper" and filled["palette"] == {"accent": "#9C3D22", "landHi": "#9C3D22", "accent2": "#123456"}, filled.get("palette"))
+
 tmp = tempfile.mkdtemp(); os.chdir(tmp); os.makedirs("series")
 json.dump(REQ, open("request.json", "w")); json.dump(PLAN, open("series/series.json", "w"))
 r = subprocess.run([sys.executable, "-m", "infogen", "series", "series/series.json"], capture_output=True, text=True, env={**os.environ, "PYTHONPATH": ROOT})

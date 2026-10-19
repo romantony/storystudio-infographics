@@ -47,6 +47,11 @@ Use `--warn "<text>"` for anything the reviewer must know. If you cannot finish,
    - `format`;
    - `era`: the time and place the pictures must show, for example `"Berlin, 1948-49"` or `"present day, United States"`.
 
+   If the request's `visuals.style` or `visuals.palette` is `"auto"`, choose one `style` and one `palette` for the whole series. Every episode is made with them, so the series looks like a series.
+   - Pick the style that suits most of the episodes, using the same rules as `/app/prompts/produce.md` ("Choosing the style and palette"). `python3 -m infogen style` shows the presets.
+   - Add `"style"`, `"palette"` (only the colours you change, or `{}`) and `"style_why"` (one sentence) to `series/series.json`.
+   - The `series` command checks them like `style --choose`, contrast included.
+
    Write a shared `cast` only if one to three recurring characters (a narrator figure, a guide) would help the series. Give each a fixed, specific visual description, and use none based on a real, identifiable person. Keep any cast from `visuals.cast` exactly as given.
 4. **Run `python3 -m infogen series series/series.json`** and fix every error. It then fills in the publish dates, the next titles, the Short angles and the style. It also writes the overview the reviewer reads, as `series/series.md` and `series/series.pdf` (the PDF is the link StoryStudio shares).
    - **Review by the analysts.** The **Research Analyst** checks that every synopsis is true and sourced. The **Quality Analyst** checks the series as a series. Start both in the background, and wait until `review/research.json` and `review/qa.json` both exist:

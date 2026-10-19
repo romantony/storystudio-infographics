@@ -66,7 +66,7 @@ def start():
         idx[req.request_id] = j; V.jwrite("", "index.json", idx)
     r = req.model_dump(); r["output"]["prefix"] = r["output"]["prefix"] or f"infogen/{req.request_id}/"
     V.jwrite(j, "request.json", r)
-    V.jwrite(j, "style.json", {"preset": r["visuals"]["style"], "palette": r["visuals"]["palette"], "cast": r["visuals"]["cast"]})
+    V.jwrite(j, "style.json", V.style_json(r))
     V.jwrite(j, "job.json", {"job_id": j, "request_id": req.request_id, "request": r, "created_at": S.now(), "deadline": time.time() + req.limits.max_runtime_minutes * 60})
     V.jwrite(j, "state.json", {"state": "running", "seq": 0})
     S.update(os.path.join(V.jdir(j), "status.json"), stage="setup", message="Job accepted.")

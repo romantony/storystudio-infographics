@@ -6,6 +6,7 @@ series/series.json:
 { "name": "Cold War Flashpoints",
   "premise": "Twelve moments when the Cold War nearly turned hot, told as they happened.",
   "cast": {"narrator": "a woman in her 40s, short grey hair, navy blazer, red scarf"},
+  "style": "paper", "palette": {"accent": "#9C3D22"}, "style_why": "1940s-60s history: ...",   only when the request's style or palette is "auto"
   "episodes": [{"n": 1, "title": "The Berlin Airlift", "topic": "The Berlin Airlift",
                 "synopsis": "How the Western Allies kept 2 million West Berliners alive by air for 15 months ...",
                 "format": "true_story", "era": "Berlin, 1948-49"}, ...] }
@@ -13,9 +14,11 @@ series/series.json:
 python3 -m infogen series series/series.json
 checks it against request.json (episode count, formats, lengths, unique topics) and fills in, for every episode:
 `publish_date` (series_plan.per_week episodes a week, spread over the week, from series_plan.start_date or the next
-Monday), `next_title`, `shorts` (the request's angles) and the series `style`. It also writes the overview the reviewer
+Monday), `next_title`, `shorts` (the request's angles) and the series `style` and `palette`: the request's, or, when it
+says "auto", the plan's choice (one for the whole series, checked like `style --choose`: infogen/style.py). It also writes the overview the reviewer
 reads, as series/series.md and series/series.pdf (the link StoryStudio shares). Exit code 1 on errors."""
 import datetime as dt, json, os, sys
+from . import style as STY
 
 FORMATS = ("explainer", "what_if", "hour_by_hour", "day_by_day", "versus", "body", "ranking", "true_story", "compilation")
 ANGLES = ("hook", "stat", "twist", "myth", "countdown")
@@ -40,6 +43,17 @@ def check(plan, req):
     else:
         for k, v in ((req.get("visuals") or {}).get("cast") or {}).items():
             if cast.get(k) != v: err.append(f"cast {k!r}: keep the request's description unchanged")
+    v = req.get("visuals") or {}; fixed = v.get("palette") if isinstance(v.get("palette"), dict) else {}
+    pick_style, pick_palette = v.get("style") == "auto", v.get("palette") == "auto" or (v.get("style") == "auto" and not fixed)
+    if pick_style and plan.get("style") not in STY.PRESETS: err.append(f'the request\'s style is "auto": choose "style" for the series, one of {", ".join(STY.PRESETS)}')
+    if not pick_style and plan.get("style") not in (None, v.get("style", "flat_vector")): err.append(f'"style": the request sets {v.get("style", "flat_vector")}')
+    if pick_palette:
+        if not isinstance(plan.get("palette"), dict): err.append('the request\'s palette is "auto": choose "palette" for the series (an object; {} keeps the style\'s)')
+        else: err += STY.palette_errors(plan["palette"])
+    elif plan.get("palette") not in (None, fixed): err.append('"palette": the request sets the colours')
+    if (pick_style or pick_palette) and not str(plan.get("style_why", "")).strip(): err.append('"style_why": one sentence on why the style and palette suit the series')
+    if not err and plan.get("style", v.get("style", "flat_vector")) in STY.PRESETS:
+        err += STY.contrast_errors(STY.resolved_palette(plan.get("style", v.get("style", "flat_vector")), plan.get("palette") if pick_palette else {}, fixed))
     eps = plan.get("episodes")
     if not isinstance(eps, list): return err + ['"episodes" must be a list'], warn
     if len(eps) != want: err.append(f"{len(eps)} episodes, the request asks for {want} (series_plan.episodes)")
@@ -71,7 +85,9 @@ def fill(plan, req, today=None):
     start = dt.date.fromisoformat(sp["start_date"]) if sp.get("start_date") else next_monday(today)
     eps = plan["episodes"]; shorts = req.get("shorts") or {}
     angles = list(shorts.get("angles") or ANGLES[:3])[:shorts.get("count", 3)]
-    plan["style"] = (req.get("visuals") or {}).get("style", "flat_vector")
+    v = req.get("visuals") or {}; fixed = v.get("palette") if isinstance(v.get("palette"), dict) else {}
+    if v.get("style", "flat_vector") != "auto": plan["style"] = v.get("style", "flat_vector")
+    plan["palette"] = {**(plan.get("palette") or {}), **fixed}   # the colours every episode is made with; the request's win
     plan["episodes_per_week"] = sp.get("per_week", 3)
     for e, d, nxt in zip(eps, dates(len(eps), sp.get("per_week", 3), start), eps[1:] + [None]):
         e["publish_date"] = d
@@ -80,7 +96,9 @@ def fill(plan, req, today=None):
     return plan
 
 def overview(plan):
-    lines = [f"# {plan['name']}", "", plan["premise"], "", f"{len(plan['episodes'])} episodes, {plan['episodes_per_week']} a week, style {plan['style']}.", ""]
+    lines = [f"# {plan['name']}", "", plan["premise"], "", f"{len(plan['episodes'])} episodes, {plan['episodes_per_week']} a week, style {plan['style']}."
+             + (f" {plan['style_why']}" if plan.get("style_why") else ""), ""]
+    if plan.get("palette"): lines += ["Palette: " + ", ".join(f"{k} {v if isinstance(v, str) else ' '.join(v)}" for k, v in plan["palette"].items()), ""]
     if plan.get("cast"): lines += ["Cast:", *[f"- **{k}**: {v}" for k, v in plan["cast"].items()], ""]
     lines += ["| # | Publish | Title | Format | Era |", "|---|---|---|---|---|"]
     lines += [f"| {e['n']} | {e['publish_date']} | {e['title']} | {e['format']} | {e['era']} |" for e in plan["episodes"]]
@@ -99,7 +117,12 @@ def pdf(plan, path):
     line = lambda w, h, text: p.multi_cell(w, h, text, new_x="LMARGIN", new_y="NEXT")
     p.set_font("D", "B", 20); line(0, 10, plan["name"]); p.ln(2)
     p.set_font("D", "", 11); line(0, 6, plan["premise"]); p.ln(2)
-    p.set_font("D", "", 9); line(0, 5, f"{len(plan['episodes'])} episodes, {plan['episodes_per_week']} a week, style {plan['style']}."); p.ln(2)
+    p.set_font("D", "", 9); line(0, 5, f"{len(plan['episodes'])} episodes, {plan['episodes_per_week']} a week, style {plan['style']}."
+                                     + (f" {plan['style_why']}" if plan.get("style_why") else "")); p.ln(1)
+    pal = STY.resolved_palette(plan["style"], plan.get("palette"), {}); x0 = p.get_x(); y = p.get_y()
+    for i, c in enumerate([pal[k] for k in ("bg", "text", "accent", "accent2", "land", "landHi", "ocean")] + pal["series"][:6]):
+        p.set_fill_color(*(int(c[k:k + 2], 16) for k in (1, 3, 5))); p.set_draw_color(160, 160, 160); p.rect(x0 + i * 8, y, 7, 7, style="DF")
+    p.set_y(y + 10)
     if plan.get("cast"):
         p.set_font("D", "B", 10); p.cell(0, 6, "Cast", new_x="LMARGIN", new_y="NEXT"); p.set_font("D", "", 9)
         for k, v in plan["cast"].items(): line(0, 5, f"{k}: {v}")

@@ -35,20 +35,20 @@ r = analyst("qa", reply=REPLY)
 out = json.loads(r.stdout) if r.returncode == 0 else {}
 check("qa: runs and reports counts", r.returncode == 0 and out["findings"] == {"must_fix": 1, "should_fix": 0, "suggestion": 1} and out["criteria_failed"] == 1 and out["rubric"] == "script", (r.stdout[-500:], r.stderr[-500:]))
 p = open(env["PROMPT_OUT"]).read()
-check("qa: prompt has the role, every active criterion and the files", p.startswith("# Quality Analyst") and "Q12" in p and "- script/script.json" in p and "- research/sources.md" not in p, p[-600:])
+check("qa: prompt has the role, every active criterion and the files", p.startswith("# Quality Analyst") and "Q13" in p and "- script/script.json" in p and "- research/sources.md" not in p, p[-600:])
 R = json.load(open(f"{rub}/script.json"))
 by = {c["id"]: c for c in R["criteria"]}
 check("rubric: seeded, scores counted (na not counted)", (by["Q01"]["checked"], by["Q01"]["failed"], by["Q01"]["last_failed"], by["Q02"]["checked"], by["Q03"]["checked"]) == (1, 1, "job-1", 1, 0), by["Q01"])
-check("rubric: the new guideline added from this job, the near-duplicate not", by.get("Q13", {}).get("source") == "job-1" and "Q14" not in by and out["guidelines_added"] == ["Q13"] and R["version"] == 2, [c["id"] for c in R["criteria"]])
+check("rubric: the new guideline added from this job, the near-duplicate not", by.get("Q14", {}).get("source") == "job-1" and "Q15" not in by and out["guidelines_added"] == ["Q14"] and R["version"] == 2, [c["id"] for c in R["criteria"]])
 rep = json.load(open(f"{run}/review/qa.json")); md = open(f"{run}/review/qa.md").read()
 check("report: json drops unknown severities, md lists findings, failures and guidelines",
       len(rep["findings"]) == 2 and "## must fix (1)" in md and "Q01: scene 1 opens" in md and "names the stakes" in md, md)
 hist = [json.loads(l) for l in open(f"{rub}/history.jsonl")]
-check("history: one line per recorded review", hist[-1]["job"] == "job-1" and hist[-1]["failed"] == ["Q01"] and hist[-1]["added"] == ["Q13"], hist)
+check("history: one line per recorded review", hist[-1]["job"] == "job-1" and hist[-1]["failed"] == ["Q01"] and hist[-1]["added"] == ["Q14"], hist)
 
 r = analyst("qa", "--verify", reply={**REPLY, "new_guidelines": [{"area": "x", "check": "A completely different rule about map framing and label sizes.", "why": "y"}]})
 R2 = json.load(open(f"{rub}/script.json"))
-check("verify: writes qa_verify, records nothing", r.returncode == 0 and os.path.exists(f"{run}/review/qa_verify.md") and R2["version"] == 2 and len(R2["criteria"]) == 13, r.stderr[-300:])
+check("verify: writes qa_verify, records nothing", r.returncode == 0 and os.path.exists(f"{run}/review/qa_verify.md") and R2["version"] == 2 and len(R2["criteria"]) == 14, r.stderr[-300:])
 check("verify: the prompt carries the first pass's findings", "second pass" in open(env["PROMPT_OUT"]).read())
 
 r = analyst("research", reply={"summary": "ok", "scores": [{"id": "R01", "result": "pass"}], "findings": [], "new_guidelines": []})
@@ -72,7 +72,7 @@ for i in range(4):
     procs.append(subprocess.Popen([sys.executable, "-m", "infogen", "analyst", "qa"], cwd=run, env={**env, "REPLY": rep_i, "PROMPT_OUT": rep_i + ".p"}, stdout=subprocess.DEVNULL))
 for pr in procs: pr.wait()
 R3 = json.load(open(f"{rub}/script.json")); by = {c["id"]: c for c in R3["criteria"]}
-check("parallel: all 4 reviews counted, all 4 guidelines kept", by["Q02"]["failed"] == 4 and len(R3["criteria"]) == 17 and R3["version"] == 6, (by["Q02"], len(R3["criteria"]), R3["version"]))
+check("parallel: all 4 reviews counted, all 4 guidelines kept", by["Q02"]["failed"] == 4 and len(R3["criteria"]) == 18 and R3["version"] == 6, (by["Q02"], len(R3["criteria"]), R3["version"]))
 
 # retirement: over MAX_ACTIVE, the most-checked never-failed criteria go first
 A.MAX_ACTIVE = 15
@@ -81,7 +81,7 @@ R3["criteria"][4]["checked"] = 30   # Q05 checked most
 json.dump(R3, open(f"{rub}/script.json", "w"))
 A.record("script", {"scores": [], "new_guidelines": []}, "job-3")
 st = {c["id"]: c["status"] for c in json.load(open(f"{rub}/script.json"))["criteria"]}
-check("retire: 17 active over a cap of 15 retires Q05 then Q04/Q06's first", [k for k, v in st.items() if v == "retired"] in (["Q04", "Q05"], ["Q05", "Q04"]) and sum(v == "active" for v in st.values()) == 15, st)
+check("retire: 18 active over a cap of 15 retires the three checked-never-failed ones", sorted(k for k, v in st.items() if v == "retired") == ["Q04", "Q05", "Q06"] and sum(v == "active" for v in st.values()) == 15, st)
 
 r = subprocess.run([sys.executable, "-m", "infogen", "rubric", "show", "script"], cwd=run, capture_output=True, text=True, env=env)
 check("rubric show: active criteria with their record", "Q01 [hook]" in r.stdout and "(failed 1 of 1)" in r.stdout and "Q05" not in r.stdout, r.stdout[:400])

@@ -43,8 +43,14 @@ class Shorts(BaseModel):
     count: int = Field(3, ge=0, le=3); aspect: Literal["9:16"] = "9:16"
     angles: List[Literal["hook", "stat", "twist", "myth", "countdown"]] = ["hook", "stat", "twist"]
 class Visuals(BaseModel):
-    style: Literal["flat_vector", "noir_vector", "paper"] = "flat_vector"
-    palette: Dict[str, Union[str, List[str]]] = {}     # overrides of remotion/src/theme.ts keys, e.g. {"accent": "#FFC93C"}; "series" is a list
+    style: Literal["flat_vector", "noir_vector", "paper", "auto"] = "flat_vector"   # "auto": Claude chooses it from the topic (infogen/style.py)
+    palette: Union[Dict[str, Union[str, List[str]]], Literal["auto"]] = {}   # overrides of remotion/src/theme.ts keys ("series" is a list), or "auto"
+    @field_validator("palette")
+    @classmethod
+    def known_colours(cls, v):
+        from infogen.style import palette_errors
+        if isinstance(v, dict) and palette_errors(v): raise ValueError("; ".join(palette_errors(v)))
+        return v
     cast: Dict[str, str] = {}                          # recurring characters: id -> fixed visual description
     illustrations: Optional[int] = Field(None, ge=0, le=240)  # frames in the visual plan; default 80 per 10 minutes of the long video (the plan aims for 50-80)
     characters: int = Field(8, ge=0, le=20)            # character references for the visual plan (cut out automatically)
@@ -218,6 +224,13 @@ def kill(j):
         except Exception:
             try: os.killpg(p.pid, signal.SIGKILL)
             except Exception: pass
+def style_json(r):
+    """The run's style.json from the request. "auto" leaves the style and/or the palette for the run to choose (infogen/style.py):
+    the palette is chosen when it is "auto", or when the style is "auto" and the request fixes no colours."""
+    v = r["visuals"]; fixed = v["palette"] if isinstance(v["palette"], dict) else {}
+    choose = {"style": v["style"] == "auto", "palette": v["palette"] == "auto" or (v["style"] == "auto" and not fixed)}
+    return {"preset": v["style"], "palette": fixed, "cast": v["cast"], **({"choose": choose} if any(choose.values()) else {})}
+
 def start_prompt(req):
     return open(SERIES_PROMPT if req.get("kind") == "series_plan" else PROMPT).read() + "\n\n## This job\n\nThe request is in `request.json` in the current folder. Read it first.\n"
 
@@ -269,7 +282,7 @@ def create(req: Req, _=Depends(auth)):
         j = "ig_" + uuid.uuid4().hex[:12]; os.makedirs(jdir(j))
         r = req.model_dump(); r["output"]["prefix"] = r["output"]["prefix"] or f"infogen/{req.request_id}/"
         jwrite(j, "request.json", r)
-        jwrite(j, "style.json", {"preset": r["visuals"]["style"], "palette": r["visuals"]["palette"], "cast": r["visuals"]["cast"]})   # infogen/style.py reads it
+        jwrite(j, "style.json", style_json(r))   # infogen/style.py reads it
         jwrite(j, "job.json", {"job_id": j, "request_id": req.request_id, "request": r, "created_at": S.now(), "deadline": time.time() + req.limits.max_runtime_minutes * 60})
         jwrite(j, "state.json", {"state": "running", "seq": 0})
         S.update(os.path.join(jdir(j), "status.json"), stage="setup", message="Job accepted.")

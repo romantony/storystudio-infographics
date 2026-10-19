@@ -83,6 +83,13 @@ try:
     c, s = call("POST", f"/v1/infographics/{b['job_id']}/cancel"); check("cancel", s["state"] == "cancelled", s)
     time.sleep(1.0); check("cancelled job stays cancelled and frees the slot", call("GET", f"/v1/infographics/{b['job_id']}")[1]["state"] == "cancelled" and not call("GET", "/v1/health")[1]["busy"])
     check("health reports idle_seconds", "idle_seconds" in call("GET", "/v1/health")[1])
+    c, b = call("POST", "/v1/infographics", dict(base, request_id="st1", visuals={"style": "auto", "palette": {"accent": "#FF0000"}}, review_mode="auto"))
+    st1 = None
+    if c == 202: st1 = json.load(open(os.path.join(runs, b["job_id"], "style.json"))); wait_state(b["job_id"], ["succeeded", "failed"])
+    check("style auto: the style is left to choose, the fixed colour kept, the palette not chosen", c == 202 and st1["preset"] == "auto"
+          and st1["choose"] == {"style": True, "palette": False} and st1["palette"] == {"accent": "#FF0000"}, (c, b, st1))
+    c, b = call("POST", "/v1/infographics", dict(base, request_id="st2", visuals={"palette": {"glow": "#FFFFFF"}}))
+    check("palette: an unknown colour is a 400", c == 400 and "glow" in json.dumps(b), b)
     for secs, want in ((300, 202), (900, 202), (450, 400), (1800, 400)):
         c, b = call("POST", "/v1/infographics", dict(base, request_id=f"d{secs}", long={"target_seconds": secs}, review_mode="auto"))
         check(f"duration {secs} s: {want}", c == want and (want == 400 or b["job_id"]), b)

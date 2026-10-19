@@ -133,6 +133,19 @@
    "checked": 0,
    "failed": 0,
    "last_failed": null
+  },
+  {
+   "id": "P11",
+   "area": "style",
+   "check": "When the series style or palette was chosen automatically, it suits most of the episodes' tone and eras, not only the first.",
+   "why": "Every episode is made with it.",
+   "weight": 2,
+   "status": "active",
+   "source": "seed",
+   "added": "2026-10-19",
+   "checked": 0,
+   "failed": 0,
+   "last_failed": null
   }
  ]
 }

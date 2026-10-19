@@ -159,6 +159,19 @@
    "checked": 0,
    "failed": 0,
    "last_failed": null
+  },
+  {
+   "id": "Q13",
+   "area": "style",
+   "check": "When the style or palette was chosen automatically, it suits the story's tone, subject and era, and the chart colours match the pictures' palette line, so the video looks like one piece.",
+   "why": "A mismatched look reads as a template, not a story.",
+   "weight": 2,
+   "status": "active",
+   "source": "seed",
+   "added": "2026-10-19",
+   "checked": 0,
+   "failed": 0,
+   "last_failed": null
   }
  ]
 }

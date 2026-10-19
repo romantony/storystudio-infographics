@@ -48,8 +48,8 @@ POST /v1/infographics
 | `series.publish_date` | `YYYY-MM-DD`, the episode's planned publish date | — |
 | `long.narrator_voice` | a Gemini TTS voice (`Puck` upbeat, `Charon` informative, `Fenrir` excitable, `Orus` firm) | `Puck` |
 | `shorts.angles` | `hook`, `stat`, `twist`, `myth`, `countdown` | `hook, stat, twist` |
-| `visuals.style` | `flat_vector`, `noir_vector`, `paper` | `flat_vector` |
-| `visuals.palette` | overrides for keys of `remotion/src/theme.ts` | `{}` |
+| `visuals.style` | `flat_vector`, `noir_vector`, `paper`, or `auto`: Claude chooses the style for the topic after the research (`style --choose`) | `flat_vector` |
+| `visuals.palette` | overrides for keys of `remotion/src/theme.ts` (`"#RRGGBB"`; `series` a list), or `auto`: Claude chooses the colours. With `style` `auto` and no colours fixed, the palette is chosen as well. Fixed colours always win, and every choice is checked for readable contrast | `{}` |
 | `visuals.cast` | recurring characters, id to a fixed visual description; keep it the same across a series | `{}` |
 | `visuals.illustrations` | most frames in the visual plan (0 to 240); the plan uses 50 to 80 per 10 minutes, each on screen 8 to 12 s | 80 per 10 minutes of `long.target_seconds` |
 | `visuals.characters` / `objects` / `backgrounds` | references the frames are composed from (0 to 20 each) | 8 / 8 / 8 |

@@ -13,7 +13,19 @@ Prompts in assets.json may name cast members in braces, "{narrator_guy} staring 
 description is substituted, so a character looks the same in every image. `era` and `palette_prompt` are added to
 every image prompt, so clothing, vehicles and colours stay in period across the whole video.
 
-python3 -m infogen style            print the resolved style
+"style": "auto" (or "palette": "auto") in the request leaves the choice to the run: style.json then has "preset": "auto"
+and/or a "choose" block ({"style": true, "palette": true}), and nothing renders until Claude has chosen, after the
+research:
+
+python3 -m infogen style --choose --preset paper --palette '{"accent": "#9C3D22", ...}' --why "1948 history: ..."
+    checks the choice (a known preset; known colour keys, "#RRGGBB", series a list of 1-12; readable contrast, below)
+    and writes it to style.json. Colours fixed by the request ("palette" in style.json) always win over chosen ones.
+    --preset only when the style is to be chosen, --palette only when the palette is ('{}' keeps the preset's).
+
+Contrast (WCAG ratios, on the final palette): text on bg, text on ink and ink on panel at least 4.5; ink on accent,
+muted on bg and accent on bg at least 3; every series colour on bg at least 2, and no two series colours nearly the same; landHi on land at least 1.5.
+
+python3 -m infogen style            print the resolved style (or, while the choice is open, the presets to choose from)
 """
 import json, os, re, sys
 
@@ -46,9 +58,11 @@ PRESETS = {
         "negative": None,
     },
     "paper": {
-        "palette": {"bg": "#F4EBDD", "bg2": "#FFF8EC", "text": "#1E2A38", "muted": "#6B7A89", "ink": "#1E2A38", "panel": "#1E2A38", "accent": "#E4572E",
+        # ink is light here: it is the background behind text on timecards and badges, and the text on panel labels
+        # (it used to equal text and panel, which made both unreadable); the gold is darkened to read on cream
+        "palette": {"bg": "#F4EBDD", "bg2": "#FFF8EC", "text": "#1E2A38", "muted": "#6B7A89", "ink": "#FFF8EC", "panel": "#1E2A38", "accent": "#E4572E",
                     "accent2": "#2E86AB", "land": "#D9C7A7", "landHi": "#E4572E", "ocean": "#BFD7EA", "border": "#F4EBDD",
-                    "series": ["#E4572E", "#2E86AB", "#76B041", "#F3A712", "#A23B72", "#1E2A38"]},
+                    "series": ["#E4572E", "#2E86AB", "#76B041", "#B07A00", "#A23B72", "#1E2A38"]},
         "image_style": BASE_STYLE + ", warm paper-cutout look, subtle paper grain texture, wide 16:9 composition",
         "palette_prompt": "a muted warm palette",
         "character_style": None,
@@ -56,11 +70,60 @@ PRESETS = {
     },
 }
 
+PALETTE_KEYS = ("bg", "bg2", "text", "muted", "ink", "panel", "accent", "accent2", "good", "bad", "land", "landHi", "ocean", "border", "series")
+HEX = re.compile(r"#[0-9a-fA-F]{6}$")
+DEFAULT_PALETTE = {"bg": "#0E2740", "bg2": "#17507A", "text": "#FFFFFF", "muted": "#A9C1D6", "ink": "#11233A", "panel": "#FFFFFF", "accent": "#FFC93C",
+                   "accent2": "#FF5A5F", "good": "#3DDC97", "bad": "#FF5A5F", "land": "#2C6A8C", "landHi": "#FFC93C", "ocean": "#0B1F33", "border": "#0B1F33",
+                   "series": ["#FFC93C", "#FF5A5F", "#3DDC97", "#4CC9F0", "#B388EB", "#FF9F1C", "#F15BB5", "#9EF01A"]}   # remotion/src/theme.ts
+
+def palette_errors(p):
+    """Errors for a palette override: known keys, "#RRGGBB", series a list of 1 to 12."""
+    if not isinstance(p, dict): return ['palette must be an object of colour key -> "#RRGGBB"']
+    err = []
+    for k, v in p.items():
+        if k not in PALETTE_KEYS: err.append(f"palette.{k}: unknown colour (allowed: {', '.join(PALETTE_KEYS)})")
+        elif k == "series":
+            if not (isinstance(v, list) and 1 <= len(v) <= 12 and all(isinstance(c, str) and HEX.match(c) for c in v)): err.append('palette.series: a list of 1 to 12 colours like "#FFC93C"')
+        elif not (isinstance(v, str) and HEX.match(v)): err.append(f'palette.{k}: a colour like "#FFC93C"')
+    return err
+
+def luminance(c):
+    def ch(x):
+        x = int(x, 16) / 255
+        return x / 12.92 if x <= 0.03928 else ((x + 0.055) / 1.055) ** 2.4
+    return 0.2126 * ch(c[1:3]) + 0.7152 * ch(c[3:5]) + 0.0722 * ch(c[5:7])
+
+def contrast(a, b):
+    la, lb = sorted((luminance(a), luminance(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+def contrast_errors(p):
+    """Readability of a full palette (the preset's, the chosen and the fixed colours merged)."""
+    err = []
+    # ink is both a background (timecards, badges: text on ink) and a text colour (on panel labels and accent markers)
+    for fg, bg, need in (("text", "bg", 4.5), ("text", "ink", 4.5), ("ink", "panel", 4.5), ("ink", "accent", 3), ("muted", "bg", 3), ("accent", "bg", 3), ("landHi", "land", 1.5)):
+        r = contrast(p[fg], p[bg])
+        if r < need: err.append(f"{fg} on {bg}: contrast {r:.1f}, needs {need}")
+    for i, c in enumerate(p["series"]):
+        r = contrast(c, p["bg"])
+        if r < 2: err.append(f"series[{i}] {c} on bg: contrast {r:.1f}, needs 2")
+        for j in range(i):
+            d = sum((int(c[k:k + 2], 16) - int(p["series"][j][k:k + 2], 16)) ** 2 for k in (1, 3, 5)) ** 0.5
+            if d < 40: err.append(f"series[{i}] {c} is too close to series[{j}] {p['series'][j]}")
+    return err
+
+def resolved_palette(preset, chosen, fixed):
+    return {**DEFAULT_PALETTE, **PRESETS[preset]["palette"], **(chosen or {}), **(fixed or {})}
+
+def open_choice(s): return s.get("preset") == "auto" or any((s.get("choose") or {}).values())
+
 def load(path="style.json"):
     s = json.load(open(path)) if os.path.exists(path) else {}
+    if open_choice(s): sys.exit('the style is "auto" and not chosen yet: after the research, run python3 -m infogen style --choose (python3 -m infogen style --help)')
     pre = PRESETS.get(s.get("preset", "flat_vector"), PRESETS["flat_vector"]); base = PRESETS["flat_vector"]
     out = {k: (pre.get(k) if pre.get(k) is not None else base[k]) for k in base}
-    out["palette"] = {**pre["palette"], **s.get("palette", {})}
+    out["palette"] = {**pre["palette"], **s.get("chosen_palette", {}), **s.get("palette", {})}   # the request's colours win over chosen ones
+    out["chosen"] = s.get("chosen")
     out["cast"] = s.get("cast", {}); out["logo"] = s.get("logo"); out["preset"] = s.get("preset", "flat_vector")
     out["era"] = s.get("era"); out["anchor"] = s.get("anchor")
     for k in ("image_style", "character_style", "negative", "palette_prompt"):
@@ -81,5 +144,39 @@ def image_prompt(prompt, st, kind="scene"):
     era = f", everything historically accurate for {st['era']}" if st.get("era") else ""
     return f"{body}. {wrap}, {st['palette_prompt']}{era}. Avoid: {st['negative']}."
 
+def choose(argv, path="style.json"):
+    s = json.load(open(path)) if os.path.exists(path) else {}
+    want = s.get("choose") or {}
+    if not open_choice(s): sys.exit("nothing to choose: the request set the style and the palette")
+    arg = lambda k: argv[argv.index(k) + 1] if k in argv else None
+    preset, raw, why = arg("--preset"), arg("--palette"), (arg("--why") or "").strip()
+    err, chosen = [], {}
+    if want.get("style"):
+        if preset not in PRESETS: err.append(f"--preset: one of {', '.join(PRESETS)}")
+    elif preset: err.append("--preset: the request set the style; choose only the palette")
+    if want.get("palette"):
+        if raw is None: err.append("--palette: give the chosen colours as JSON ('{}' keeps the preset's)")
+        else:
+            try: chosen = json.loads(raw)
+            except Exception: err.append("--palette: not valid JSON"); chosen = {}
+            err += palette_errors(chosen)
+    elif raw: err.append("--palette: the request set the palette; choose only the style")
+    if not why: err.append("--why: one sentence on why this suits the topic")
+    final = preset if want.get("style") else s.get("preset", "flat_vector")
+    if not err: err += contrast_errors(resolved_palette(final, chosen, s.get("palette")))
+    if err: sys.exit("style not chosen:\n" + "\n".join(f"- {e}" for e in err))
+    s["preset"] = final; s["chosen_palette"] = chosen
+    s["chosen"] = {"style": final if want.get("style") else None, "palette": chosen if want.get("palette") else None, "why": why}
+    s.pop("choose", None)
+    json.dump(s, open(path, "w"), indent=1)
+    print(json.dumps({"preset": final, "palette": resolved_palette(final, chosen, s.get("palette")), "why": why}, indent=1))
+
 def main(cmd, argv):
+    if "--choose" in argv: return choose(argv)
+    if "--help" in argv: sys.exit(__doc__)
+    s = json.load(open("style.json")) if os.path.exists("style.json") else {}
+    if open_choice(s):
+        print(json.dumps({"to_choose": [k for k, v in (s.get("choose") or {}).items() if v], "fixed_palette": s.get("palette", {}),
+                          "presets": {k: {"palette": resolved_palette(k, {}, s.get("palette")), "pictures": v["image_style"].replace(BASE_STYLE, "<flat vector base>")}
+                                      for k, v in PRESETS.items()}}, indent=1)); return
     print(json.dumps(load(), indent=1))

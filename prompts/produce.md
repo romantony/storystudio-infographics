@@ -88,6 +88,25 @@ Never write a generic type ("a cargo plane", "a soldier", "a hospital") where th
 
 Both are added to every image prompt.
 
+**Choosing the style and palette (when the request says "auto").** If `visuals.style` or `visuals.palette` in `request.json` is `"auto"`, nothing renders until you choose. Choose after the research, together with `era` and `palette_prompt`, so the charts, maps and title cards look like one video with the pictures.
+- Run `python3 -m infogen style` to see the three presets and their colours.
+- **Choose the style by the story's tone and world:**
+  - `noir_vector`: crime, espionage, war, disasters, survival, night-time events, dark mysteries;
+  - `paper`: history before about 1970, science, nature, the human body, calm explainers;
+  - `flat_vector`: the modern world (business, technology, the economy, sport, geography, rankings) and `what_if` scenarios about the present or the future.
+- **Choose the palette from the topic's own world:** its era (1940s olive and khaki, 1980s neon), its materials and places (sea blues, desert ochres, fire reds), and the picture `palette_prompt` you wrote.
+  - `accent` is the story's signature colour, for the key numbers and highlights; `accent2` is a contrasting second.
+  - `series` has 4 to 6 clearly different colours that belong together. Never tell two of them apart by red against green alone.
+  - `land` and `ocean` stay natural, so maps read as maps.
+  - Keep the background dark for `flat_vector` and `noir_vector` and light for `paper`.
+  - Use national, party or brand colours only where the story is about them.
+  - Change only what you need: the preset's other colours stay.
+- **Apply it:** `python3 -m infogen style --choose --preset <style> --palette '<JSON of the colours you change>' --why "<one sentence: why this suits the topic>"`.
+  - Give `--preset` only when the style is to be chosen, and `--palette` only when the palette is (`'{}'` keeps the preset's colours).
+  - Colours the request fixed always win.
+  - It checks contrast: text, numbers, labels and chart colours must stay readable. If it refuses, adjust the colours it names and run it again.
+- **Report the choice** as a warning, for example "style: chose paper with a sepia palette and a brick-red accent, for a 1948 history story".
+
 If its `cast` is empty and the story has people, add one to three recurring characters with a fixed, specific visual description (age, clothing from the visual facts, hair, one colour accent) and use them as `{id}` in every character and scene prompt, so they look the same throughout. Draw people at real proportions; the style already says so, so do not ask for cute, big-headed or chibi figures. Do not base a character on a real, identifiable person.
 
 In every prompt, name things by their specific type from the visual facts ("the C-54"), never just "a cargo plane" or "a military truck": the model fills in a modern or generic one.
