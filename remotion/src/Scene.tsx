@@ -5,6 +5,8 @@ import {Illustration, TimeBadge} from './templates/Illustration';
 import {BarChart, Counter, Donut, Icons, LineChart} from './templates/Charts';
 import {List, Timeline, Versus} from './templates/Compare';
 import {MapScene} from './templates/MapScene';
+import {Ambient, normalize} from './templates/Ambient';
+import {BackdropLayer} from './kit';
 import {Clip, EndCard, TextCard, TimeCard, TitleCard} from './templates/Cards';
 
 export const TEMPLATES: Record<string, React.FC<any>> = {
@@ -41,9 +43,16 @@ export const Scene: React.FC<SceneProps> = (props) => {
   useFonts();
   const p = pal(props.palette); const T = TEMPLATES[props.type];
   if (!T) return <AbsoluteFill style={{background: '#300', color: '#fff', fontFamily: FONT, fontSize: 60, padding: 80}}>Unknown scene type: {props.type}</AbsoluteFill>;
+  // ambient: a looping animated motif. Behind the chart templates (through their Backdrop); over a still or a clip, blended on top.
+  const amb = normalize(props.ambient); const overImage = props.type === 'illustration' || props.type === 'clip';
   return (
     <AbsoluteFill style={{background: p.bg}}>
-      <Entrance cut={props.cut}><T {...props} p={p} /></Entrance>
+      <Entrance cut={props.cut}>
+        <BackdropLayer.Provider value={amb && !overImage ? <Ambient spec={amb} p={p} /> : null}>
+          <T {...props} p={p} />
+          {amb && overImage ? <Ambient spec={amb} p={p} over /> : null}
+        </BackdropLayer.Provider>
+      </Entrance>
       {props.timecard && props.type !== 'illustration' && props.type !== 'timecard' ? <TimeBadge text={props.timecard} p={p} /> : null}
       <Logo src={props.logo} base={props.base} />
     </AbsoluteFill>

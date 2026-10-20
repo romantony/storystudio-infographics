@@ -1,5 +1,5 @@
 // Building blocks shared by the templates: layout units, entrance animations, backdrop, headings, icons, counters.
-import React from 'react';
+import React, {useContext} from 'react';
 import {AbsoluteFill, Easing, Img, interpolate, spring, useCurrentFrame, useVideoConfig} from 'remotion';
 import {FONT, Palette, isImage, url} from './theme';
 
@@ -46,6 +46,9 @@ export const countText = (value: string | number, k: number) => {
   return m[1] + fmtNumber(target, k, dec, m[2].includes(',') || Math.abs(target) >= 10000) + m[3];
 };
 
+// an animated motif (templates/Ambient.tsx) the Scene lays behind the chart templates' Backdrop
+export const BackdropLayer = React.createContext<React.ReactNode>(null);
+
 // slowly moving soft shapes behind charts, so nothing is ever a frozen frame
 export const Backdrop: React.FC<{p: Palette; seed?: number}> = ({p, seed = 1}) => {
   const f = useCurrentFrame(); const {width, height} = useVideoConfig(); const u = Math.min(width, height) / 1080;
@@ -61,6 +64,7 @@ export const Backdrop: React.FC<{p: Palette; seed?: number}> = ({p, seed = 1}) =
           background: i % 2 ? p.accent : '#ffffff', opacity: 0.045}} />
       ))}
       <AbsoluteFill style={{backgroundImage: `repeating-linear-gradient(135deg, rgba(255,255,255,0.025) 0 ${2 * u}px, transparent ${2 * u}px ${26 * u}px)`}} />
+      {useContext(BackdropLayer)}
     </AbsoluteFill>
   );
 };

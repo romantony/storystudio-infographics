@@ -10,6 +10,7 @@ Every scene in `script/script.json` (and `shorts/<id>/script.json`) has a `type`
 | `seconds`, `hold` | Minimum length; extra seconds after the narration. |
 | `cut` | `whip` (default between different scenes), `hard` (default when the same illustration continues), `fade`. |
 | `timecard` | Badge in the top-left corner, e.g. `"DAY 2 · 14:00"`. It stays on later illustration, clip and map scenes until another scene sets it again or sets `""`. |
+| `ambient` | A looping animated background drawn in code, free and never a frozen frame: `"power_grid"` or `{"motif", "mode", "at", "period", "opacity"}`. Motifs: `power_grid` (pylons, wires with current pulses, house lights), `city_lights`, `network`, `flow`, `radar`, `waves`. `mode`: `flow` (default), `blackout` (lights go out in a cascade from `at` seconds, current stops) or `restore` (lights come back on). It repeats every `period` s (default 8). Behind charts, counters and cards; blended over an illustration or clip. |
 | `chapter` | Starts a YouTube chapter here (long video). |
 | `source` | Shown small at the bottom; required on data scenes. |
 | `verify`, `verify_note` | Fact-check list for the reviewer. |

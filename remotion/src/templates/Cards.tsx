@@ -1,6 +1,6 @@
 // title, timecard, text, endcard, clip
 import React from 'react';
-import {AbsoluteFill, Freeze, Img, OffthreadVideo, Sequence, useCurrentFrame} from 'remotion';
+import {AbsoluteFill, Img, Loop, OffthreadVideo, useCurrentFrame} from 'remotion';
 import {FONT, Palette, SceneProps, url} from '../theme';
 import {Backdrop, Icon, StageBox, pop, prog, useStage} from '../kit';
 import {Illustration} from './Illustration';
@@ -102,14 +102,14 @@ export const EndCard: React.FC<P> = ({p, series = '', next, lines = []}) => {
   );
 };
 
-// clip: a video (an LTX animation of an illustration, say) filling the frame; holds its last frame if the scene is longer
+// clip: a video (a Wan/LTX animation of an illustration, say) filling the frame; loops while the scene lasts (a pause-free restart, no frozen frame)
 export const Clip: React.FC<P> = ({p, src, base, clip_seconds = 5, timecard}) => {
-  const {fps, n} = useStage(); const cf = Math.max(1, Math.floor(clip_seconds * fps) - 1);
-  const v = <OffthreadVideo src={url(base, src)!} muted style={{width: '100%', height: '100%', objectFit: 'cover'}} />;
+  const {fps} = useStage(); const cf = Math.max(1, Math.floor(clip_seconds * fps) - 1);
   return (
     <AbsoluteFill style={{background: '#000'}}>
-      <Sequence durationInFrames={Math.min(cf, n)}>{v}</Sequence>
-      {n > cf ? <Sequence from={cf}><Freeze frame={cf - 1}>{v}</Freeze></Sequence> : null}
+      <Loop durationInFrames={cf}>
+        <OffthreadVideo src={url(base, src)!} muted style={{width: '100%', height: '100%', objectFit: 'cover'}} />
+      </Loop>
     </AbsoluteFill>
   );
 };

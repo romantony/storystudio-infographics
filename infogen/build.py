@@ -77,7 +77,7 @@ def scene_props(s, W, H, L, beats, cut, st, label):
     if t == "clip" and not find_asset(p.get("clip") or p.get("src"), ("mp4", "webm", "mov")) and find_asset(p.get("clip"), ("png", "jpg", "jpeg", "webp")):
         # an animated frame whose clip was not made (over the cap, or the camera moved): show the still frame instead
         print(f"{label}: no clip {p['clip']!r}, showing the still frame", flush=True)
-        p = {"type": "illustration", "image": p["clip"], "move": p.get("move", "zoom_in"), **({"timecard": p["timecard"]} if p.get("timecard") else {})}; t = "illustration"
+        p = {"type": "illustration", "image": p["clip"], "move": p.get("move", "zoom_in"), **{k: p[k] for k in ("timecard", "ambient") if p.get(k)}}; t = "illustration"
     if t not in TYPES: sys.exit(f"{label}: unknown type {t!r} (use one of {', '.join(sorted(TYPES))})")
     if p.get("image"): p["image"] = resolve(p["image"], label)
     elif t == "illustration": sys.exit(f"{label}: an illustration needs \"image\"")

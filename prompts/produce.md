@@ -138,8 +138,10 @@ Budget, from the request:
 
 Prompts describe pictures only, never text, labels or numbers (the templates add those, spelled correctly). Leave out the cut-out `cast` layer on illustration scenes: the characters are already in the frame.
 
+**Looping ambient backgrounds (free, use them freely).** Any scene can carry `"ambient": {"motif": ..., "mode": ...}` (motifs and modes: `docs/SCENES.md`): a background animated in code that repeats for as long as the scene lasts, with no GPU cost and no cap. Pick the motif that matches what the narration is about and put one on every chart, counter, list and card scene and on at least every third illustration, so the screen is always moving. Power cut or outage: `power_grid` with `"mode": "blackout"` (set `at` to when the narrator says it); power coming back: `"mode": "restore"`; a working grid: default. Cities at night: `city_lights`; internet, supply chains, networks: `network`; money, trade, traffic: `flow`; detection, alarms, spreading news: `radar`; sea, ports, floods: `waves`. Over an illustration keep `opacity` at 0.4 to 0.6.
+
 **Animation: simple only.** A few frames come to life. Give those frames an `animate` block (slots: the docstring of `/app/infogen/animate.py`), and show each one with a scene `{"type": "clip", "clip": "<frame id>"}`. Clip lengths are fixed:
-- **Wan2.2, 5 seconds** (the default). On a frame longer than 5 s the clip holds its last frame, so put the clip scene first and let the frame's second scene show the still with a camera move.
+- **Wan2.2, 5 seconds** (the default). A clip scene longer than the clip loops it, so it never freezes.
 - **LTX 2.3 hero shot, 10 seconds,** with `"engine": "ltx"`: only for the one or two biggest moments (the opening hook, the climax), and only if `visuals.ltx_clips` > 0. Give it a scene of about 10 seconds, or two consecutive scenes on its frame.
 - **Pick only the beats that carry the story:** the opening hook, the turning point, the climax, and at most one per chapter.
 - **The caps are hard:** Wan clips, `visuals.animated_max_pct` of the frames and never more than `visuals.animated_clips`; LTX hero shots, `visuals.ltx_clips`. `validate --plan` rejects a plan over either.
