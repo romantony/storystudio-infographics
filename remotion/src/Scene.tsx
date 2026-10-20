@@ -6,6 +6,7 @@ import {BarChart, Counter, Donut, Icons, LineChart} from './templates/Charts';
 import {List, Timeline, Versus} from './templates/Compare';
 import {MapScene} from './templates/MapScene';
 import {Ambient, normalize} from './templates/Ambient';
+import {Sprites} from './templates/Sprites';
 import {BackdropLayer} from './kit';
 import {Clip, EndCard, TextCard, TimeCard, TitleCard} from './templates/Cards';
 
@@ -53,6 +54,7 @@ export const Scene: React.FC<SceneProps> = (props) => {
           {amb && overImage ? <Ambient spec={amb} p={p} over /> : null}
         </BackdropLayer.Provider>
       </Entrance>
+      {Array.isArray(props.animated) && props.animated.length ? <Sprites items={props.animated} p={p} base={props.base} /> : null}
       {props.timecard && props.type !== 'illustration' && props.type !== 'timecard' ? <TimeBadge text={props.timecard} p={p} /> : null}
       <Logo src={props.logo} base={props.base} />
     </AbsoluteFill>

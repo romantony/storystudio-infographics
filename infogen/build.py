@@ -86,6 +86,8 @@ def scene_props(s, W, H, L, beats, cut, st, label):
         if isinstance(p.get(side), dict) and p[side].get("image") and find_asset(p[side]["image"]): p[side]["image"] = find_asset(p[side]["image"])
     if t == "clip":
         p["src"] = resolve(p.get("clip") or p.get("src"), label, ("mp4", "webm", "mov")); p["clip_seconds"] = round(dur(p["src"]), 3)
+    for a in p.get("animated", []):
+        if a.get("lottie"): a["lottie"] = resolve(a["lottie"], f"{label} animated", ("json",))
     resolve_icons(p)
     p.update(width=W, height=H, fps=FPS, seconds=round(L, 4), beats=[round(b, 3) for b in beats], cut=cut, palette=st["palette"])
     if st.get("logo") and os.path.exists(st["logo"]): p["logo"] = st["logo"]

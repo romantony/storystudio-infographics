@@ -1,6 +1,6 @@
 // Looping animated backgrounds, drawn in code (no GPU, no clip files), so they never run out: every motif repeats every `period` seconds.
 //   ambient: "power_grid" | {motif, mode, at, period, opacity, blend}
-//   motif: power_grid | city_lights | network | flow | radar | waves
+//   motif: power_grid | city_lights | network | flow | radar | waves | factory | traffic | rain | stocks
 //   mode:  flow (default, everything running) | blackout (lights go out in a cascade from `at`, current stops) | restore (lights come back on from `at`)
 //   at: seconds into each loop when the blackout/restore starts (default 1.5)   period: loop length in seconds (default 8)
 //   opacity: 0..1 (default 1 behind charts, 0.55 over a still)   blend: CSS mix-blend-mode when laid over a still (default "screen")
@@ -10,7 +10,7 @@ import {Palette} from '../theme';
 import {useStage} from '../kit';
 
 export type AmbientSpec = {motif: string; mode?: string; at?: number; period?: number; opacity?: number; blend?: string};
-export const MOTIFS = ['power_grid', 'city_lights', 'network', 'flow', 'radar', 'waves'];
+export const MOTIFS = ['power_grid', 'city_lights', 'network', 'flow', 'radar', 'waves', 'factory', 'traffic', 'rain', 'stocks'];
 
 export const normalize = (a: any): AmbientSpec | null => {
   if (!a) return null;
@@ -142,7 +142,61 @@ const Waves: React.FC<M> = ({p, w, h, u, c, period}) => {
   );
 };
 
-const DRAW: Record<string, React.FC<M>> = {power_grid: PowerGrid, city_lights: CityLights, network: Network, flow: Flow, radar: Radar, waves: Waves};
+
+const Factory: React.FC<M> = ({p, w, h, u, c, f, fps, period}) => {
+  const base = h * 0.86; const stacks = [0.14, 0.3, 0.72, 0.86]; const cyc = (c.t / period) % 1;
+  return (
+    <svg width={w} height={h} style={{position: 'absolute', inset: 0}}>
+      <rect x={0} y={base - 90 * u} width={w} height={90 * u + h - base} fill="#000" opacity={0.35} />
+      {stacks.map((sx, i) => (<g key={i}>
+        <rect x={w * sx - 22 * u} y={base - 260 * u - 40 * i * u} width={44 * u} height={260 * u + 40 * i * u} fill="#000" opacity={0.4} />
+        {Array.from({length: 6}, (_, k) => { const q = (cyc * 2 + k / 6 + i * 0.21) % 1; const y = base - 300 * u - 40 * i * u - q * 260 * u;
+          return <circle key={k} cx={w * sx + Math.sin(q * 6 + i) * 20 * u + q * 40 * u} cy={y} r={(18 + 40 * q) * u} fill="#FFFFFF" opacity={0.2 * (1 - q) * c.g} />; })}
+      </g>))}
+      {[0.45, 0.58].map((gx, i) => <g key={i} transform={`translate(${w * gx},${base - 30 * u}) rotate(${(i ? -1 : 1) * c.t * 45})`} opacity={0.35 * (0.3 + 0.7 * c.g)}>
+        {Array.from({length: 8}, (_, k) => <rect key={k} x={-6 * u} y={-44 * u} width={12 * u} height={16 * u} fill={p.accent} transform={`rotate(${k * 45})`} />)}<circle r={30 * u} fill={p.accent} /><circle r={12 * u} fill={p.bg} /></g>)}
+    </svg>
+  );
+};
+
+const Traffic: React.FC<M> = ({p, w, h, u, c, period}) => {
+  const cyc = (c.t / period) % 1; const lanes = [h * 0.72, h * 0.82, h * 0.92];
+  return (
+    <svg width={w} height={h} style={{position: 'absolute', inset: 0}}>
+      <rect x={0} y={h * 0.68} width={w} height={h * 0.32} fill="#000" opacity={0.3} />
+      {lanes.map((y, l) => Array.from({length: 4}, (_, k) => { const dir = l % 2 ? -1 : 1; const q = (((cyc * (l + 1) + k / 4 + rnd(l, 41)) % 1) + 1) % 1; const x = dir > 0 ? q * (w + 300 * u) - 150 * u : w + 150 * u - q * (w + 300 * u);
+        return (<g key={l + '-' + k} transform={`translate(${x},${y})`} opacity={0.85 * (0.3 + 0.7 * c.g)}>
+          <rect x={-40 * u} y={-16 * u} width={80 * u} height={22 * u} rx={6 * u} fill={p.series[(l * 4 + k) % p.series.length]} />
+          <circle cx={dir * 40 * u} cy={-5 * u} r={5 * u} fill="#FFFFFF" /><circle cx={dir * 90 * u} cy={-5 * u} r={22 * u} fill="#FFFFFF" opacity={0.1} /></g>); }))}
+    </svg>
+  );
+};
+
+const Rain: React.FC<M> = ({w, h, u, c, f, fps}) => {
+  const t = f / fps;
+  return (
+    <svg width={w} height={h} style={{position: 'absolute', inset: 0}}>
+      {Array.from({length: 90}, (_, i) => { const sp = 0.9 + rnd(i, 51) * 0.8; const q = (t * sp + rnd(i, 52)) % 1; const x = rnd(i, 53) * w + q * 80 * u; const y = q * (h + 120 * u) - 60 * u;
+        return <line key={i} x1={x} y1={y} x2={x - 14 * u} y2={y + 46 * u} stroke="#CFE8FF" strokeWidth={2 * u} opacity={0.35} />; })}
+      {[0, 1, 2].map((i) => { const fl = Math.floor(t * 0.5 + i) % 3 === 0 && (t * 7 + i) % 3 < 0.25; return fl ? <rect key={i} width={w} height={h} fill="#FFFFFF" opacity={0.18} /> : null; })}
+    </svg>
+  );
+};
+
+const Stocks: React.FC<M> = ({p, w, h, u, c, period}) => {
+  const cyc = (c.t / period) % 1; const N = 80;
+  const d = Array.from({length: N + 1}, (_, i) => { const x = i / N; const xx = (x + cyc) % 1;   // whole sine cycles across the width: seamless per loop
+    return `${i ? 'L' : 'M'}${x * w},${h * 0.5 + Math.sin(xx * Math.PI * 6) * h * 0.07 + Math.sin(xx * Math.PI * 14 + 1) * h * 0.03}`; }).join(' ');
+  return (
+    <svg width={w} height={h} style={{position: 'absolute', inset: 0}}>
+      {[0.2, 0.4, 0.6, 0.8].map((g) => <line key={g} x1={0} x2={w} y1={h * g} y2={h * g} stroke={p.muted} strokeWidth={u} opacity={0.15} />)}
+      <path d={d} fill="none" stroke={p.good} strokeWidth={5 * u} opacity={0.7 * (0.3 + 0.7 * c.g)} strokeLinejoin="round" style={{filter: `drop-shadow(0 0 ${6 * u}px ${p.good})`}} />
+      {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => { const x = ((i + cyc * 2) % 8) / 8 * w; const hh = (40 + 90 * rnd(i, 61)) * u; return <rect key={i} x={x} y={h - hh} width={26 * u} height={hh} fill={rnd(i, 62) > 0.5 ? p.good : p.bad} opacity={0.12} />; })}
+    </svg>
+  );
+};
+
+const DRAW: Record<string, React.FC<M>> = {power_grid: PowerGrid, city_lights: CityLights, network: Network, flow: Flow, radar: Radar, waves: Waves, factory: Factory, traffic: Traffic, rain: Rain, stocks: Stocks};
 
 export const Ambient: React.FC<{spec: AmbientSpec; p: Palette; over?: boolean}> = ({spec, p, over}) => {
   const f = useCurrentFrame(); const {fps, width, height, u} = useStage();
