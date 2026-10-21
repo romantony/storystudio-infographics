@@ -38,7 +38,7 @@ class Series(BaseModel):
     publish_date: Optional[str] = Field(None, pattern=DATE)
 class Long(BaseModel):
     enabled: bool = True; aspect: Literal["16:9"] = "16:9"
-    target_seconds: Literal[300, 600, 900] = 600; narrator_voice: str = "Puck"   # approximate: the script aims for it, nothing cuts at it
+    target_seconds: int = Field(600, ge=60, le=1800); narrator_voice: str = "Puck"   # approximate: the script aims for it, nothing cuts at it
 class Shorts(BaseModel):
     count: int = Field(3, ge=0, le=3); aspect: Literal["9:16"] = "9:16"
     angles: List[Literal["hook", "stat", "twist", "myth", "countdown"]] = ["hook", "stat", "twist"]
@@ -70,7 +70,8 @@ class Thumbnail(BaseModel):   # cinematic thumbnails (infogen/thumbnail.py): Nan
     shorts_cover: bool = True                           # and put it into the Short as a cover frame
     resolution: Literal["1K", "2K", "4K"] = "2K"
 class Limits(BaseModel):
-    max_runtime_minutes: int = Field(180, ge=30, le=360); max_llm_turns: int = Field(500, ge=20, le=2000)
+    max_runtime_minutes: Optional[int] = Field(None, ge=30, le=720);   # default: 18 per minute of the long video (180 for 10 minutes)
+    max_llm_turns: int = Field(500, ge=20, le=2000)
 class Output(BaseModel):
     prefix: Optional[str] = Field(None, max_length=200, pattern=r"^infogen/[A-Za-z0-9_\-./]*$")   # the instance role can only write under infogen/
 class Callback(BaseModel):
@@ -96,6 +97,7 @@ class Req(BaseModel):
     def frame_budget(self):
         # One frame every 8 to 12 s (1-2 consecutive scenes): 50 to 80 per 10 minutes; the budget is the upper end.
         if self.visuals.illustrations is None: self.visuals.illustrations = min(240, round(80 * self.long.target_seconds / 600))
+        if self.limits.max_runtime_minutes is None: self.limits.max_runtime_minutes = max(30, round(18 * self.long.target_seconds / 60))
         return self
 class Respond(BaseModel):
     checkpoint_id: str; action: Literal["approve", "revise", "abort"]; instructions: str = ""

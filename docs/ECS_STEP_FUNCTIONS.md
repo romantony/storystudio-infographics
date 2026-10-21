@@ -52,7 +52,7 @@ Result:
 - `SendTaskHeartbeat` every 60 s. Set `HeartbeatSeconds` (for example 600) so a task that dies without reporting
   (out of memory, stopped by ECS) fails the state instead of waiting for ever.
 
-`limits.max_runtime_minutes` applies to each task separately; the time a job waits at a checkpoint does not count.
+`limits.max_runtime_minutes` (default 18 per minute of `long.target_seconds`: 90, 180, 270 or 540; at most 720) applies to each task separately; the time a job waits at a checkpoint does not count. Set the state's `TimeoutSeconds` above the longest task you allow: 43800 (730 minutes) covers the 720-minute maximum.
 
 ## State machine (outline)
 
@@ -70,7 +70,7 @@ Result:
           {"Name": "PAYLOAD_JSON", "Value.$": "States.JsonToString($.payload)"},
           {"Name": "INFOGEN_TASK_TOKEN", "Value.$": "$$.Task.Token"}]}]}
       },
-      "HeartbeatSeconds": 600, "TimeoutSeconds": 14400, "ResultPath": "$.job", "Next": "Route"
+      "HeartbeatSeconds": 600, "TimeoutSeconds": 43800, "ResultPath": "$.job", "Next": "Route"
     },
     "Route": {"Type": "Choice", "Choices": [
         {"Variable": "$.job.state", "StringEquals": "awaiting_input", "Next": "Review"},

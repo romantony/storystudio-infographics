@@ -20,7 +20,7 @@ a config-driven toolkit and a small API that an orchestrator drives.
 
 ## How a video is made
 
-A request makes one video, or with `"kind": "series_plan"` plans a whole series (`prompts/plan_series.md`, `infogen/series.py`) whose episodes are then made one at a time (docs/ORCHESTRATOR_INTEGRATION.md). Videos are 5, 10 or 15 minutes (`long.target_seconds` 300, 600 or 900). A Quality Analyst and a Research Analyst review every script and series plan against rubrics (`rubrics/`) that grow from every run's findings (`infogen/analysts.py`).
+A request makes one video, or with `"kind": "series_plan"` plans a whole series (`prompts/plan_series.md`, `infogen/series.py`) whose episodes are then made one at a time (docs/ORCHESTRATOR_INTEGRATION.md). Videos are 1 to 30 minutes (`long.target_seconds` 60 to 1800). A Quality Analyst and a Research Analyst review every script and series plan against rubrics (`rubrics/`) that grow from every run's findings (`infogen/analysts.py`).
 
 1. **Research and script** (Claude): sources first (`research/sources.md`) and what everything on screen looks like (`research/visual_facts.json`, from the topic and synopsis), then `script/script.json`: 70 to 90 scenes for 10 minutes, each one visual beat of 4 to 10 seconds, every reveal tied to a word (`cue`). `validate` checks it.
 2. **Art** (`queue`): scene illustrations and character poses from Qwen, wrapped in the series style (`style.json`: preset, palette, era, recurring cast described once). Characters are generated on plain white and cut out automatically. Music from ACE-Step. Optional LTX animations.

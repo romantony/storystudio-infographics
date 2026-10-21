@@ -95,7 +95,7 @@ try:
     check("thumbnail: unknown style, too many candidates, too long a headline are 400", c == 400, b)
     c, b = call("POST", "/v1/infographics", dict(base, request_id="st2", visuals={"palette": {"glow": "#FFFFFF"}}))
     check("palette: an unknown colour is a 400", c == 400 and "glow" in json.dumps(b), b)
-    for secs, want in ((300, 202), (900, 202), (450, 400), (1800, 400)):
+    for secs, want in ((60, 202), (300, 202), (450, 202), (1800, 202), (59, 400), (1801, 400)):
         c, b = call("POST", "/v1/infographics", dict(base, request_id=f"d{secs}", long={"target_seconds": secs}, review_mode="auto"))
         check(f"duration {secs} s: {want}", c == want and (want == 400 or b["job_id"]), b)
         if c == 202: wait_state(b["job_id"], ["succeeded", "failed"])

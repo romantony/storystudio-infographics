@@ -43,7 +43,7 @@ POST /v1/infographics
 | Field | Values | Default |
 |---|---|---|
 | `format` | `explainer`, `what_if`, `hour_by_hour`, `day_by_day`, `versus`, `body`, `ranking`, `true_story`, `compilation` | `explainer` |
-| `long.target_seconds` | `300`, `600` or `900`: a target the script is written to, not a cut-off (`validate` warns beyond 15 %) | 600 |
+| `long.target_seconds` | any whole number from `60` to `1800` (1 to 30 minutes): a target the script is written to, not a cut-off (`validate` warns beyond 15 %) | 600 |
 | `kind` | `video` (one video) or `series_plan` (plan a series; see below) | `video` |
 | `series.publish_date` | `YYYY-MM-DD`, the episode's planned publish date | — |
 | `long.narrator_voice` | a Gemini TTS voice (`Puck` upbeat, `Charon` informative, `Fenrir` excitable, `Orus` firm) | `Puck` |
