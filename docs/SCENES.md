@@ -110,3 +110,20 @@ A video (an LTX animation from `assets.json`) filling the frame; holds its last 
 
 ## endcard
 Added automatically at the end (5 s long, 2.5 s Shorts) from the script's `series` and `next`. Set `"endcard": false` in the script to leave it out.
+
+## bars3d, globe, network3d (3D scenes)
+Three.js scenes, rendered in software (no GPU), with the same palette and heading as the flat charts. Use them sparingly, for the one or two moments in a video that should feel like a reveal; the planner `python3 -m infogen scene3d <n>` (Opus, `INFOGEN_ANIM_MODEL`, default `claude-opus-5-5`) designs the camera and the cues of a scene and cannot change any data. A 6 s scene takes roughly 30 to 50 s to render on 8 cores.
+```json
+{"type": "bars3d", "title": "...", "kicker": "...", "prefix": "$", "unit": "bn", "max": 1000, "camera": "rise",
+ "items": [{"label": "USA", "value": 916, "highlight": true, "cue": "America"}], "source": "SIPRI 2024"}
+
+{"type": "globe", "title": "...", "focus": [10, 30], "spin": 50, "camera": "push_in", "highlight": ["Egypt", {"country": "Panama", "color": "#FF5A5F"}],
+ "pins": [{"lon": 32.5, "lat": 30, "label": "Suez", "cue": "Suez"}], "arcs": [{"from": [-79.5, 9], "to": [32.5, 30], "cue": "ships"}]}
+
+{"type": "network3d", "title": "...", "camera": "orbit",
+ "nodes": [{"id": "a", "label": "Plant", "size": 1, "cue": "plant"}, {"id": "b", "label": "City"}], "links": [{"from": "a", "to": "b", "cue": "power"}]}
+```
+- `camera`: `"orbit"` (default), `"push_in"`, `"rise"`, `"still"`, or `{"az": [from, to], "el": [from, to], "dist": [from, to]}` (degrees round the subject, degrees above the horizon, distance multiplier).
+- `bars3d`: 1 to 10 `items` (revealable), like `bar_chart`; needs a `source`.
+- `globe`: country shapes as the Earth's skin (`highlight` colours countries, names as in `map`), `pins` then `arcs` revealable. `focus` is the point it faces mid-scene, `spin` the degrees it turns.
+- `network3d`: 2 to 14 `nodes` (`size` 0 to 1), `links` between node `id`s; nodes then links revealable. The layout is computed, the same every time.

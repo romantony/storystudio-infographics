@@ -12,12 +12,12 @@ from collections import Counter
 from .build import TYPES, items_of
 from .common import find_asset, load
 from .narration import WPS, paths
-from . import timing, visual_plan as VP
+from . import scene3d, timing, visual_plan as VP
 
 REQUIRED = {"illustration": ["image"], "bar_chart": ["items"], "line_chart": ["points"], "donut": ["items"], "counter": ["value"], "icons": ["total", "highlight"],
-            "versus": ["a", "b"], "timeline": ["events"], "list": ["items"], "map": [], "title": ["title"], "timecard": ["text"], "text": ["text"], "clip": ["clip"]}
+            "versus": ["a", "b"], "timeline": ["events"], "list": ["items"], "map": [], "title": ["title"], "timecard": ["text"], "text": ["text"], "clip": ["clip"], "bars3d": ["items"], "globe": [], "network3d": ["nodes", "links"]}
 FRAME_SECS = (7.5, 12)   # seconds on screen per frame: 50 to 80 frames per 10 minutes
-DATA = {"bar_chart", "line_chart", "donut", "counter", "icons", "versus"}
+DATA = {"bar_chart", "line_chart", "donut", "counter", "icons", "versus", "bars3d"}
 
 def main(cmd, argv):
     sid = argv[argv.index("--short") + 1] if "--short" in argv else None
@@ -48,6 +48,7 @@ def main(cmd, argv):
         wl = timing.words(text, None, max(est, 0.1))
         for it in items_of(s):
             if isinstance(it, dict) and it.get("cue") and timing.cue(wl, it["cue"]) is None: err.append(f"{lab}: cue {it['cue']!r} not in its narration")
+        err += [f"{lab}: {e}" for e in scene3d.check(s)]
         if t in DATA and not s.get("source"): err.append(f"{lab}: {t} has no \"source\" (every number on screen needs one)")
         if t in DATA and not s.get("verify"): warn.append(f"{lab}: {t} is not marked \"verify\"")
         ids = [s.get("image")] + [c.get("src") or c.get("id") for c in s.get("cast", [])] + [s.get("clip")]

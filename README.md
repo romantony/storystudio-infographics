@@ -8,7 +8,7 @@ a config-driven toolkit and a small API that an orchestrator drives.
 | Path | What |
 |---|---|
 | `infogen/` | Toolkit. Run from a run folder: `python3 -m infogen <command>`. Each module's docstring is the format reference. |
-| `remotion/` | The scene templates (React/Remotion): `illustration`, `bar_chart`, `line_chart`, `donut`, `counter`, `icons`, `versus`, `map`, `timeline`, `list`, `title`, `timecard`, `text`, `clip`, `endcard`, plus the thumbnail. `render.mjs` renders many scenes with one browser. |
+| `remotion/` | The scene templates (React/Remotion): `illustration`, `bar_chart`, `line_chart`, `donut`, `counter`, `icons`, `versus`, `map`, the 3D scenes `bars3d`, `globe`, `network3d`, `timeline`, `list`, `title`, `timecard`, `text`, `clip`, `endcard`, plus the thumbnail. `render.mjs` renders many scenes with one browser. |
 | `docs/SCENES.md` | Every template and its fields. |
 | `docs/ORCHESTRATOR_INTEGRATION.md` | The API: what differs from docgen, the request payload, cost and render time. |
 | `api/server.py` | FastAPI server: one job at a time, status from `status.json`, signed webhooks, checkpoints. |

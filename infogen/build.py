@@ -23,7 +23,7 @@ from . import captions, render, sfx, style as STY, timing
 from .common import ASSETS, FPS, dur, find_asset, load, mkdirs
 from .narration import paths
 
-TYPES = {"illustration", "bar_chart", "line_chart", "donut", "counter", "icons", "versus", "timeline", "list", "map", "title", "timecard", "text", "endcard", "clip"}
+TYPES = {"illustration", "bar_chart", "line_chart", "donut", "counter", "icons", "versus", "timeline", "list", "map", "title", "timecard", "text", "endcard", "clip", "bars3d", "globe", "network3d"}
 META = {"n", "narration", "voice", "verify", "verify_note", "seconds", "hold", "sfx", "chapter", "notes"}
 PRODUCED = ["Produced @ https://ai-storystudio.com · https://agent.ai-storystudio.com"]
 SR = 48000
@@ -31,7 +31,9 @@ SR = 48000
 def items_of(s):
     t = s["type"]
     if t == "illustration": return list(s.get("cast", [])) + list(s.get("callouts", []))
-    if t in ("bar_chart", "list"): return s.get("items", [])
+    if t in ("bar_chart", "list", "bars3d"): return s.get("items", [])
+    if t == "globe": return list(s.get("pins", [])) + list(s.get("arcs", []))
+    if t == "network3d": return list(s.get("nodes", [])) + list(s.get("links", []))
     if t == "line_chart": return [s, s.get("annotate") or {}]
     if t == "donut": return [s] + list(s.get("items", []))
     if t == "counter": return [s, {"cue": s.get("sub_cue")}]

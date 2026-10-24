@@ -36,7 +36,7 @@ def main(cmd, argv):
     if src_txt: desc = desc.replace("{sources}", "Sources:\n" + src_txt) if "{sources}" in desc else desc + "\n\nSources:\n" + src_txt
     desc += "\n\n" + L.get("disclosure", "Narration, illustrations and music in this video are AI-generated. Figures are taken from the sources listed.") + "\n\n" + PRODUCED + "\n\n" + L.get("hashtags", "")
     ver = [(n, s["type"], s["verify_note"]) for n, s in sc.items() if s.get("verify")]
-    unverified = [n for n, s in sc.items() if s["type"] in ("bar_chart", "line_chart", "donut", "counter", "icons", "versus") and not s.get("source")]
+    unverified = [n for n, s in sc.items() if s["type"] in ("bar_chart", "line_chart", "donut", "counter", "icons", "versus", "bars3d") and not s.get("source")]
     if unverified: warn.append(f"data scenes without a source: {unverified}")
     for ph in ("[PLAYLIST URL]", "[EPISODE", "TODO"):
         if ph in desc: warn.append(f"placeholder {ph} still in the description")

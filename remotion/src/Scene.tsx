@@ -8,12 +8,13 @@ import {MapScene} from './templates/MapScene';
 import {Ambient, normalize} from './templates/Ambient';
 import {Sprites} from './templates/Sprites';
 import {BackdropLayer} from './kit';
+import {Bars3D, Globe, Network3D} from './templates/Three';
 import {Clip, EndCard, TextCard, TimeCard, TitleCard} from './templates/Cards';
 
 export const TEMPLATES: Record<string, React.FC<any>> = {
   illustration: Illustration, bar_chart: BarChart, line_chart: LineChart, donut: Donut, counter: Counter, icons: Icons,
   versus: Versus, timeline: Timeline, list: List, map: MapScene, title: TitleCard, timecard: TimeCard, text: TextCard,
-  endcard: EndCard, clip: Clip,
+  endcard: EndCard, clip: Clip, bars3d: Bars3D, globe: Globe, network3d: Network3D,
 };
 
 // wait for the web fonts before the first frame is captured
