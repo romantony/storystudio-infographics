@@ -24,8 +24,11 @@ For a series plan, the work is the episodes' topics and synopses (`series/series
    - The 3 to 5 visual facts most likely to be wrong: aircraft, vehicles, uniforms, buildings.
 
    Say in each note what you checked and where.
-4. Check the era: anything in the prompts or visual facts that is out of period or out of place.
-5. List your findings, most important first. Each has:
+4. Check the two sourcing rules every video must meet; a breach is a `must_fix`:
+   - **Key historical claims cite a primary source**: a law, executive order, court ruling, treaty or official statistic is cited from its own text or the official publisher (a national archive, the Federal Register, a statistics agency, a central bank), not only a secondary write-up. For example, Executive Order 6102 from the archived order itself.
+   - **Prices and market figures come from at least two independent sources**, both cited, with the date of each. A figure from a single tracker, or two pages copying one feed, fails. Where they disagree, the script says which benchmark it uses.
+5. Check the era: anything in the prompts or visual facts that is out of period or out of place.
+6. List your findings, most important first. Each has:
    - `severity`:
      - `must_fix`: false, untraced, misquoted, or anachronistic;
      - `should_fix`: a weak source, a stale figure, a disputed claim stated as settled;
@@ -33,7 +36,7 @@ For a series plan, the work is the episodes' topics and synopses (`series/series
    - `where`;
    - `issue`;
    - `fix`: the correct figure or source when you found it.
-6. Propose new guidelines: research problems the rubric does not cover yet and that would recur, each as one checkable sentence (`check`) with its `area` and `why`. Propose none for a one-off.
+7. Propose new guidelines: research problems the rubric does not cover yet and that would recur, each as one checkable sentence (`check`) with its `area` and `why`. Propose none for a one-off.
 
 ## Reply
 

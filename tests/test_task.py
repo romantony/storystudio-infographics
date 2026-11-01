@@ -88,12 +88,13 @@ try:
     rc, r = task(request=dict(base, request_id="t2", review_mode="auto"))
     check("auto mode runs to the end in one task", rc == 0 and r["result"]["state"] == "succeeded" and r["result"]["outputs"][0].get("url"), r)
     u = r["result"].get("llm") or {}
-    check("Claude usage metered per call and reported in the status", u.get("calls") == 9 and u["input"] == 9000 and u["cache_read"] == 45000
-          and u["by_step"]["producer"]["calls"] == 9 and 0 < u["usd_estimate"] < 0.1, u)
+    check("Claude usage taken from the run's result line (exact output) and reported in the status", u.get("calls") == 9 and u["input"] == 9000
+          and u["output"] == 8100 and u["cache_read"] == 45000 and u["by_step"]["producer"]["calls"] == 9 and u["by_step"]["producer"]["exact"]
+          and u["usd_estimate"] == 0.09, u)
     rc, r = task("tok-b", request=dict(base, request_id="t6", review_mode="auto", topic="BUDGET runaway"))
     e = r["result"].get("error") or {}
-    check("a run past INFOGEN_MAX_LLM_USD is stopped, not retried", rc == 1 and e.get("code") == "llm_budget_exceeded" and e.get("retryable") is False
-          and r["result"]["llm"]["usd_estimate"] > 30 and r["result"]["stage"] != "done", r)
+    check("a run past INFOGEN_MAX_LLM_USD ($15) is stopped, not retried", rc == 1 and e.get("code") == "llm_budget_exceeded" and e.get("retryable") is False
+          and r["result"]["llm"]["usd_estimate"] > 15 and r["result"]["stage"] != "done", r)
     rc, r = task("tok-f", request=dict(base, request_id="t3", topic="FAIL please"))
     fail = [c for n, c in sfn_calls if n == "SendTaskFailure" and c["taskToken"] == "tok-f"]
     check("failure reported with SendTaskFailure and the error code", rc == 1 and not r["ok"] and fail and fail[-1]["error"] == "generation_failed", (r, fail))

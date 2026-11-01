@@ -5,26 +5,37 @@ run(): one fresh `claude -p` session, with only the tools it needs loaded (--too
   every turn), the per-machine part of the system prompt moved out of it (so jobs share the cached prefix), a USD cap of its own
   (--max-budget-usd: a fresh session, so the cap is unambiguous), and its token usage appended to llm_calls.jsonl in the run folder.
 
-Meter: the job's token and USD ledger, kept in llm_usage.json. It reads the producer's stream (runner.jsonl: one usage object per API
-  call, deduplicated by message id) and llm_calls.jsonl incrementally, so it can run every second. The server stops a job whose
-  estimate passes INFOGEN_MAX_LLM_USD: a runaway loop costs the cap, not the account balance.
+Meter: the job's token and USD ledger, kept in llm_usage.json. It reads the producer's stream (runner.jsonl) and llm_calls.jsonl
+  incrementally, so it can run every second. The server stops a job whose figure passes INFOGEN_MAX_LLM_USD: a runaway loop costs
+  the cap, not the account balance.
+  - Exact: each run of the producer ends with a `result` line carrying Claude Code's own totals for the SESSION (all models, the
+    Haiku it uses for web fetches included, and its list-price cost). A resumed session's totals include its earlier runs, so the
+    latest result line per session is the producer's figure, never a sum of them.
+  - Live, between result lines: the per-call usage lines. Their input and cache counts are exact, but their output count is taken
+    before the call finishes, so output is estimated from the text and tool input written (4 characters a token) plus the
+    `thinking_tokens` progress events. Good enough for the cap; replaced by the exact figure at the run's end.
 
-USD figures are estimates from the token counts and the list prices below (standard tier); the Console is the bill.
+USD figures are list prices (standard tier); the Console is the bill.
 
-Env: INFOGEN_MAX_LLM_USD (30; 0 = no cap) per job, all sessions together. INFOGEN_ANALYST_MAX_USD (5) and INFOGEN_SCENE3D_MAX_USD (2)
-     per session. INFOGEN_CLAUDE_TOOLS: the producer's tools (Bash,Read,Write,Edit,Glob,Grep,WebSearch,WebFetch)."""
+Env: INFOGEN_MAX_LLM_USD (15; 0 = no cap) per job, all sessions together. INFOGEN_ANALYST_MAX_USD (2) and INFOGEN_SCENE3D_MAX_USD (2)
+     per session. INFOGEN_CLAUDE_TOOLS: the producer's tools (Bash,Read,Write,Edit,Glob,Grep,WebSearch,WebFetch).
+     The producer runs with the 1-hour prompt cache (ENABLE_PROMPT_CACHING_1H, set by the server): its long commands (queueing
+     frames, the render) outlast the 5-minute cache, and each expiry rewrote the whole context (806K of 988K written tokens on
+     2026-11-01). The short analyst and planner sessions keep the 5-minute cache, which costs less to write."""
 import json, os, subprocess, time
 
 USAGE, CALLS = "llm_usage.json", "llm_calls.jsonl"
 PRODUCER_TOOLS = os.environ.get("INFOGEN_CLAUDE_TOOLS", "Bash,Read,Write,Edit,Glob,Grep,WebSearch,WebFetch")
 COMMON = ["--exclude-dynamic-system-prompt-sections"]   # cwd, env and git status go into the first user message instead
 
-# $ per million tokens: input, output, cache read. Cache writes are 1.25x input (5 minutes) and 2x input (1 hour).
+# $ per million tokens: input, output, cache read. Cache writes are 1.25x input (5 minutes) and 2x input (1 hour). Only used for the
+# live estimate between result lines. Sonnet 5.5's cache read rate is the one Claude Code charged on 2026-11-01 ($0.10).
 PRICES = {"claude-fable-5-1": (10, 50, 0.25), "claude-fable-5": (10, 50, 0.25), "claude-opus-5-5": (4, 20, 0.20), "claude-opus-5": (5, 25, 0.50),
-          "claude-opus-4-8": (5, 25, 0.50), "claude-sonnet-5-5": (2, 10, 0.20), "claude-sonnet-5": (2, 10, 0.20), "claude-sonnet-4-6": (3, 15, 0.30),
+          "claude-opus-4-8": (5, 25, 0.50), "claude-sonnet-5-5": (2, 10, 0.10), "claude-sonnet-5": (2, 10, 0.20), "claude-sonnet-4-6": (3, 15, 0.30),
           "claude-haiku-5-5": (0.10, 0.50, 0.01), "claude-haiku-4-5": (1, 5, 0.10)}
+KEYS = ("input", "output", "cache_read", "cache_write_5m", "cache_write_1h")
 
-def max_job_usd(): return float(os.environ.get("INFOGEN_MAX_LLM_USD", "30") or 0)
+def max_job_usd(): return float(os.environ.get("INFOGEN_MAX_LLM_USD", "15") or 0)
 
 def tokens(u):
     """A Messages API usage object as flat counts."""
@@ -48,14 +59,17 @@ def log_call(step, model, res, cwd="."):
     with open(os.path.join(cwd, CALLS), "a") as f: f.write(json.dumps(rec) + "\n")
     return rec
 
-def run(text, model, step, tools="", max_turns=40, max_usd=None, timeout=1800):
-    """The reply text of one fresh session. `tools`: space- or comma-separated built-in tool names, "" for none.
-    Raises RuntimeError when the session stopped at its USD cap or its turn limit without replying."""
+def run(text, model, step, tools="", max_turns=40, max_usd=None, timeout=1800, effort=None):
+    """The reply text of one fresh session. `tools`: space- or comma-separated built-in tool names, "" for none. `effort`: low,
+    medium, high, xhigh or max (None = the model's default). Raises RuntimeError when the session stopped at its USD cap or its
+    turn limit without replying."""
     names = [x for x in tools.replace(",", " ").split() if x]
     cmd = ["claude", "-p", text, "--model", model, "--output-format", "json", "--max-turns", str(max_turns), "--tools", ",".join(names), *COMMON]
     if names: cmd += ["--allowedTools", *names]
     if max_usd: cmd += ["--max-budget-usd", str(max_usd)]
-    out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    if effort: cmd += ["--effort", effort]
+    env = {k: v for k, v in os.environ.items() if k != "ENABLE_PROMPT_CACHING_1H"}   # inherited from the producer; a short session gains nothing from it
+    out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env)
     try: res = json.loads(out.stdout)
     except Exception: return out.stdout
     if not isinstance(res, dict): return out.stdout
@@ -69,12 +83,23 @@ def run(text, model, step, tools="", max_turns=40, max_usd=None, timeout=1800):
 def empty():
     return {"usd": 0.0, "input": 0, "output": 0, "cache_read": 0, "cache_write_5m": 0, "cache_write_1h": 0, "calls": 0, "by_step": {}}
 
-def add(tot, step, t, cost, calls=1):
-    for k in ("input", "output", "cache_read", "cache_write_5m", "cache_write_1h"): tot[k] += t[k]
-    tot["usd"] = round(tot["usd"] + cost, 4); tot["calls"] += calls
-    s = tot["by_step"].setdefault(step, {"usd": 0.0, "input": 0, "output": 0, "cache_read": 0, "cache_write": 0, "calls": 0})
-    s["usd"] = round(s["usd"] + cost, 4); s["input"] += t["input"]; s["output"] += t["output"]; s["cache_read"] += t["cache_read"]
-    s["cache_write"] += t["cache_write_5m"] + t["cache_write_1h"]; s["calls"] += calls
+def zero(): return {"usd": 0.0, "calls": 0, **{k: 0 for k in KEYS}}
+
+def add(tot, t, cost, calls=1):
+    for k in KEYS: tot[k] += t.get(k, 0)
+    tot["usd"] = round(tot["usd"] + cost, 6); tot["calls"] += calls
+
+def from_result(ev):
+    """A producer `result` line as session totals: every model in modelUsage, with Claude Code's own cost."""
+    t = zero(); mu = ev.get("modelUsage") or {}
+    for m in mu.values():
+        add(t, {"input": m.get("inputTokens", 0) or 0, "output": m.get("outputTokens", 0) or 0, "cache_read": m.get("cacheReadInputTokens", 0) or 0,
+                "cache_write_5m": m.get("cacheCreationInputTokens", 0) or 0}, m.get("costUSD", 0) or 0, calls=0)
+    cw = (ev.get("usage") or {}).get("cache_creation") or {}
+    if cw.get("ephemeral_1h_input_tokens") and mu:          # the per-model split has no 5m/1h detail; the session usage does
+        h = min(cw["ephemeral_1h_input_tokens"], t["cache_write_5m"]); t["cache_write_1h"] = h; t["cache_write_5m"] -= h
+    if not mu: t["usd"] = ev.get("total_cost_usd") or 0.0
+    t["turns"] = ev.get("num_turns"); return t
 
 class Meter:
     """The job's ledger. poll() folds in what was appended to runner.jsonl and llm_calls.jsonl since the last poll and saves it."""
@@ -82,42 +107,68 @@ class Meter:
         self.dir = run_dir; self.path = os.path.join(run_dir, USAGE)
         try: st = json.load(open(self.path))
         except Exception: st = {}
-        self.tot = st.get("total") or empty(); self.off = st.get("offsets") or {}
-        self.seen = {}                                      # message id -> counts already added (a message is streamed in several lines)
+        self.off = st.get("offsets") or {}
+        self.sessions = st.get("sessions") or {}          # producer session id -> totals from its latest result line
+        self.live = st.get("live") or zero()              # producer calls since the latest result line (estimate)
+        self.steps = st.get("steps") or {}                # analysts and planners, from llm_calls.jsonl
+        self.seen = {}                                    # message id -> counts already added to live
     def lines(self, name):
         p = os.path.join(self.dir, name)
         try:
             with open(p, "rb") as f:
                 f.seek(self.off.get(name, 0)); data = f.read()
         except FileNotFoundError: return []
-        end = data.rfind(b"\n") + 1                         # a half-written last line waits for the next poll
+        end = data.rfind(b"\n") + 1                       # a half-written last line waits for the next poll
         self.off[name] = self.off.get(name, 0) + end
         return data[:end].decode("utf-8", "replace").splitlines()
+    def live_add(self, model, t, calls):
+        add(self.live, t, usd(model, {k: t.get(k, 0) for k in KEYS}), calls)
     def poll(self):
-        before = (self.tot["usd"], self.tot["calls"], self.tot["output"])
         for line in self.lines("runner.jsonl"):
-            if '"usage"' not in line: continue
+            if '"usage"' not in line and '"thinking_tokens"' not in line and '"result"' not in line: continue
             try: ev = json.loads(line)
             except ValueError: continue
-            m = ev.get("message") if ev.get("type") == "assistant" else None
-            if not isinstance(m, dict) or not m.get("usage"): continue
-            t = tokens(m["usage"]); prev = self.seen.get(m.get("id"))
-            if prev:                                        # the same call again: add only what grew (the output count)
-                d = {k: max(t[k] - prev[k], 0) for k in t}
-                if any(d.values()): add(self.tot, "producer", d, usd(m.get("model"), d), calls=0); self.seen[m["id"]] = {k: max(t[k], prev[k]) for k in t}
-            else:
-                add(self.tot, "producer", t, usd(m.get("model"), t)); self.seen[m.get("id")] = t
+            typ = ev.get("type")
+            if typ == "result":
+                sid = ev.get("session_id") or "?"; t = from_result(ev)
+                t["calls"] = self.sessions.get(sid, {}).get("calls", 0) + self.live["calls"]   # API calls: the result line has turns, not calls
+                self.sessions[sid] = t; self.live = zero(); self.seen = {}
+            elif typ == "system" and ev.get("subtype") == "thinking_tokens":
+                self.live_add("claude-sonnet-5-5", {"output": ev.get("estimated_tokens_delta", 0) or 0}, 0)
+            elif typ == "assistant" and isinstance(ev.get("message"), dict) and ev["message"].get("usage"):
+                m = ev["message"]; t = tokens(m["usage"])
+                written = sum(len(b.get("text") or "") + len(json.dumps(b.get("input"))) if b.get("type") == "tool_use" else len(b.get("text") or "")
+                              for b in m.get("content") or [] if isinstance(b, dict))
+                t["output"] = max(t["output"], 0); est = written // 4
+                prev = self.seen.get(m.get("id"))
+                if prev is None:
+                    self.live_add(m.get("model"), {**t, "output": max(t["output"], est)}, 1); self.seen[m.get("id")] = {**t, "output": max(t["output"], est)}
+                else:                                     # the same call again (one line per content block): add what grew
+                    new = {**{k: max(t[k], prev[k]) for k in KEYS if k != "output"}, "output": prev["output"] + est}
+                    self.live_add(m.get("model"), {k: max(new[k] - prev[k], 0) for k in KEYS}, 0); self.seen[m["id"]] = new
         for line in self.lines(CALLS):
             try: r = json.loads(line)
             except ValueError: continue
-            add(self.tot, r.get("step", "other"), {k: r.get(k, 0) or 0 for k in ("input", "output", "cache_read", "cache_write_5m", "cache_write_1h")}, r.get("usd", 0) or 0)
-        if (self.tot["usd"], self.tot["calls"], self.tot["output"]) != before or not os.path.exists(self.path):
-            tmp = self.path + ".tmp"; json.dump({"total": self.tot, "offsets": self.off}, open(tmp, "w"), indent=1); os.replace(tmp, self.path)
-        return self.tot
+            add(self.steps.setdefault(r.get("step", "other"), zero()), {k: r.get(k, 0) or 0 for k in KEYS}, r.get("usd", 0) or 0)
+        tmp = self.path + ".tmp"
+        json.dump({"total": self.total(), "offsets": self.off, "sessions": self.sessions, "live": self.live, "steps": self.steps}, open(tmp, "w"), indent=1); os.replace(tmp, self.path)
+        return self.total()
+    def total(self):
+        prod = zero()
+        for t in self.sessions.values(): add(prod, t, t["usd"], t.get("calls", 0))
+        add(prod, self.live, self.live["usd"], self.live["calls"])
+        prod["exact"] = not self.live["calls"]
+        tot = empty(); tot["by_step"]["producer"] = prod
+        for name, t in [("producer", prod)] + sorted(self.steps.items()):
+            add(tot, t, t["usd"], t.get("calls", 0))
+            if name != "producer": tot["by_step"][name] = dict(t)
+        return tot
 
 def summary(run_dir):
-    """The ledger as saved, for the status object: totals, and per step."""
+    """The ledger as saved, for the status object: totals, and per step (cache writes 5-minute and 1-hour together)."""
     try: t = json.load(open(os.path.join(run_dir, USAGE)))["total"]
     except Exception: return None
+    step = lambda s: {"usd": round(s["usd"], 4), "input": s["input"], "output": s["output"], "cache_read": s["cache_read"],
+                      "cache_write": s["cache_write_5m"] + s["cache_write_1h"], "calls": s["calls"], **({"exact": s["exact"]} if "exact" in s else {})}
     return {"usd_estimate": round(t["usd"], 2), "calls": t["calls"], "input": t["input"], "output": t["output"], "cache_read": t["cache_read"],
-            "cache_write": t["cache_write_5m"] + t["cache_write_1h"], "by_step": t["by_step"]}
+            "cache_write": t["cache_write_5m"] + t["cache_write_1h"], "cache_write_1h": t["cache_write_1h"], "by_step": {k: step(v) for k, v in t["by_step"].items()}}

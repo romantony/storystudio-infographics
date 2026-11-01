@@ -29,9 +29,11 @@ Secrets (task definition `secrets`, from SSM): `ANTHROPIC_API_KEY`, `GEMINI_API_
 `INFOGEN_OUTPUT_BASE_URL=https://cdn-v2.ai-storystudio.com`, `ANTHROPIC_MODEL=claude-sonnet-5-5`, `INFOGEN_RUNNER=claude`.
 `INFOGEN_API_TOKEN`, `INFOGEN_ORIGIN_SECRET` and `VNC_PASSWORD` are not used on ECS.
 
-Claude spend (`infogen/llm.py`): `INFOGEN_MAX_LLM_USD` (default 30) stops a job whose Claude spend estimate, all sessions together,
+Claude spend (`infogen/llm.py`): `INFOGEN_MAX_LLM_USD` (default 15; a whole 10-minute video measured $6.43 on 2026-11-01) stops a job whose Claude spend estimate, all sessions together,
 passes it, with error `llm_budget_exceeded` (`retryable: false`, so a runaway job is never re-run by a retry). `INFOGEN_ANALYST_MAX_USD`
-(5) and `INFOGEN_SCENE3D_MAX_USD` (2) cap each analyst and 3D-planner session. Every job's token usage is in its status object
+(2) and `INFOGEN_SCENE3D_MAX_USD` (2) cap each analyst and 3D-planner session; `INFOGEN_THUMBNAIL_ANALYST_EFFORT` (medium) sets the
+Thumbnail Analyst's effort. The producer runs with Claude Code's 1-hour prompt cache (`ENABLE_PROMPT_CACHING_1H=1`, set by the server)
+because its long commands outlast the 5-minute cache; the analysts keep the 5-minute cache. Every job's token usage is in its status object
 (`llm`, with `by_step`) and in `llm_usage.json` in the run folder. The `/infogen/ANTHROPIC_API_KEY` key belongs to the `infogen`
 service account and is scoped to the `infogen` workspace, so the Console's usage and spend limits for that workspace are infogen's alone.
 

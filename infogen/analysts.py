@@ -123,7 +123,10 @@ def ask(text, role, model):
     if cmd: return subprocess.run(cmd, shell=True, input=text, capture_output=True, text=True, timeout=1800).stdout
     from infogen import llm
     tools = "Read Glob Grep" + (" WebSearch WebFetch" if role == "research" else "")
-    try: return llm.run(text, model, f"analyst/{role}", tools=tools, max_turns=40, max_usd=float(os.environ.get("INFOGEN_ANALYST_MAX_USD", "5")))
+    # The Thumbnail Analyst mostly scores pictures: medium effort. The Quality and Research Analysts check facts on a finance
+    # channel and keep the model's default until two of their reviews have been compared at medium.
+    effort = os.environ.get("INFOGEN_THUMBNAIL_ANALYST_EFFORT", "medium") if role == "thumbnail" else None
+    try: return llm.run(text, model, f"analyst/{role}", tools=tools, max_turns=40, max_usd=float(os.environ.get("INFOGEN_ANALYST_MAX_USD", "2")), effort=effort or None)
     except RuntimeError as e: sys.exit(f"{ROLES.get(role, role)}: {e}")
 
 def parse(reply):

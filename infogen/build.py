@@ -1,5 +1,5 @@
 """Build the long 16:9 video (script/script.json) or a 9:16 Short (shorts/<id>/script.json) from scene descriptions.
-python3 -m infogen build [--short <id>] [--stills] [--preview] [--run]
+python3 -m infogen build [--short <id>] [--stills] [--preview] [--run] [--allow-long]
 
   (no flag)   lay out only: timings, beats and render jobs; prints the scene list and total length
   --stills    one still per scene (at 70 % of its length, or after its last reveal) plus build/stills_<name>.jpg contact sheet: cheap, use it to review
@@ -17,12 +17,13 @@ scene: {"n": 1, "narration": "...", "type": "<template>", ...template fields...,
 Every revealable item (bar, list row, pin, route, highlighted country, timeline event, versus row, cast member,
 callout) can carry "cue": "word or phrase from the narration" to appear when it is spoken, or "at": seconds.
 Templates and their fields: docs/SCENES.md."""
-import json, os, re, subprocess, sys, wave
+import json, math, os, re, subprocess, sys, wave
 import numpy as np
 from . import captions, render, sfx, style as STY, timing
 from .common import ASSETS, FPS, dur, find_asset, load, mkdirs
 from .narration import paths
 
+SHORT_MAX_S = 55   # a Short is 35 to 55 s, end card included; the Shorts of 2026-11-01 ran 52, 58 and 62 s
 TYPES = {"illustration", "bar_chart", "line_chart", "donut", "counter", "icons", "versus", "timeline", "list", "map", "title", "timecard", "text", "endcard", "clip", "bars3d", "globe", "network3d"}
 META = {"n", "narration", "voice", "verify", "verify_note", "seconds", "hold", "sfx", "chapter", "notes"}
 PRODUCED = ["Produced @ https://ai-storystudio.com · https://agent.ai-storystudio.com"]
@@ -104,6 +105,12 @@ def read_wav(path):
     d = d.reshape(-1, ch); w.close()
     return d if ch == 2 else np.repeat(d, 2, axis=1)
 
+def loudness(path, target):
+    """ffmpeg's loudnorm measurement of a file: input_i (LUFS), input_tp, input_lra, input_thresh, target_offset."""
+    out = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", path, "-af", f"loudnorm=I={target}:TP=-1.5:LRA=11:print_format=json", "-f", "null", "-"],
+                         capture_output=True, text=True, check=True).stderr
+    return json.loads(out[out.rindex("{"):out.rindex("}") + 1])
+
 def main(cmd, argv):
     sid = argv[argv.index("--short") + 1] if "--short" in argv else None
     short = bool(sid); preview = "--preview" in argv; stills = "--stills" in argv; go = "--run" in argv or preview
@@ -166,6 +173,9 @@ def main(cmd, argv):
     print("  " + " ".join(f"{e['scene']}:{e['type']}:{e['end'] - e['start']:.1f}" for e in tl))
     for w in warn: print("WARNING", w)
     nwarn = len(warn)
+    if short and go and total > SHORT_MAX_S and "--allow-long" not in argv:
+        sys.exit(f"short {sid}: {total:.1f} s with the end card, over the {SHORT_MAX_S} s limit for a Short; cut narration (validate --short {sid}), "
+                 f"run tts and timings again, then build. --allow-long overrides it.")
 
     if stills:
         sj = [{"props": j["props"], "out": f"{B}/stills/s{e['scene']}_{os.path.basename(j['out'])[:-4]}.jpg", "still": True, "frame": min(e["frames"] - 1, int(max(e["frames"] * 0.7, (max(j["props"]["beats"] or [0]) + 1.3) * FPS)))} for j, e in zip(jobs, tl)]
@@ -198,16 +208,25 @@ def main(cmd, argv):
     bgm = script.get("bgm") or (f"{ASSETS}/bgm_{sid}.mp3" if short else f"{ASSETS}/bgm_long.mp3")
     bgm = find_asset(bgm, ("mp3", "wav", "m4a")) if bgm else None
     lufs = -13 if short else -14
-    tail = f"loudnorm=I={lufs}:TP=-1.5:LRA=11,aresample={SR},alimiter=limit=0.89:level=disabled[a]"
     if bgm:
         fc = (f"[2:a]aresample={SR},volume={0.2 if short else 0.16},afade=t=in:d=1.5,afade=t=out:st={max(total - 3, 0):.2f}:d=3,atrim=0:{total:.3f}[bg];"
-              f"[0:a]asplit=2[vo][sc];[bg][sc]sidechaincompress=threshold=0.03:ratio=6:attack=20:release=500[duck];[vo][1:a][duck]amix=inputs=3:duration=first:normalize=0," + tail)
+              f"[0:a]asplit=2[vo][sc];[bg][sc]sidechaincompress=threshold=0.03:ratio=6:attack=20:release=500[duck];[vo][1:a][duck]amix=inputs=3:duration=first:normalize=0[a]")
         ins = ["-i", f"{B}/narration.wav", "-i", f"{B}/sfx.wav", "-stream_loop", "-1", "-i", bgm]
     else:
         warn.append("no music: " + (f"{script.get('bgm')} not found" if script.get("bgm") else f"{ASSETS}/bgm_{'long' if not short else sid}.mp3 missing"))
-        fc = "[0:a][1:a]amix=inputs=2:duration=first:normalize=0," + tail
+        fc = "[0:a][1:a]amix=inputs=2:duration=first:normalize=0[a]"
         ins = ["-i", f"{B}/narration.wav", "-i", f"{B}/sfx.wav"]
-    sh("ffmpeg", "-y", "-loglevel", "error", *ins, "-filter_complex", fc, "-map", "[a]", "-c:a", "aac", "-b:a", "192k", f"{B}/mix.m4a")
+    # Loudness in two passes: the mix (32-bit float, so nothing clips on the way) is measured, then brought to the target with one
+    # linear gain and a true-peak limiter. One dynamic pass left a 10-minute video at -18.5 LUFS instead of -14 (2026-11-01).
+    sh("ffmpeg", "-y", "-loglevel", "error", *ins, "-filter_complex", fc, "-map", "[a]", "-c:a", "pcm_f32le", f"{B}/premix.wav")
+    m = loudness(f"{B}/premix.wav", lufs)
+    lra = max(11, min(20, math.ceil(float(m["input_lra"])) + 1))   # linear mode needs a range at least as wide as the mix's
+    norm = (f"loudnorm=I={lufs}:TP=-1.5:LRA={lra}:measured_I={m['input_i']}:measured_TP={m['input_tp']}:measured_LRA={m['input_lra']}:"
+            f"measured_thresh={m['input_thresh']}:offset={m['target_offset']}:linear=true,aresample={SR},alimiter=limit=0.84:level=disabled")
+    sh("ffmpeg", "-y", "-loglevel", "error", "-i", f"{B}/premix.wav", "-af", norm, "-c:a", "aac", "-b:a", "192k", f"{B}/mix.m4a")
+    got = loudness(f"{B}/mix.m4a", lufs)
+    print(f"loudness: {float(got['input_i']):.1f} LUFS integrated (target {lufs}), true peak {float(got['input_tp']):.1f} dBTP")
+    if abs(float(got["input_i"]) - lufs) > 1: warn.append(f"loudness {float(got['input_i']):.1f} LUFS, more than 1 LU from the {lufs} target")
     video = f"{B}/base.mp4"
     if script.get("captions", short) and words_all:
         nev = captions.ass(words_all, W, H, short, f"{B}/caps.ass")

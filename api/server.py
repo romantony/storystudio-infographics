@@ -4,7 +4,7 @@ Same lifecycle as the docgen (documentary) service: see docs/ORCHESTRATOR_INTEGR
 Env: INFOGEN_API_TOKEN (required), INFOGEN_CALLBACK_SECRET, INFOGEN_RUNS_DIR (/data/runs), INFOGEN_RUNNER (claude|mock),
      INFOGEN_IMAGE, INFOGEN_ORIGIN_SECRET (CloudFront origin header), INFOGEN_PROMPT (/app/prompts/produce.md), INFOGEN_CLAUDE_FLAGS, INFOGEN_HEARTBEAT_S (60),
      INFOGEN_KEEP_RUNS (3: full run folders kept for the newest finished jobs),
-     INFOGEN_CLAUDE_TOOLS, INFOGEN_MAX_LLM_USD (30: the job is stopped when its Claude spend estimate passes it; see infogen/llm.py)"""
+     INFOGEN_CLAUDE_TOOLS, INFOGEN_MAX_LLM_USD (15: the job is stopped when its Claude spend estimate passes it; see infogen/llm.py)"""
 import hashlib, hmac, json, os, queue, re, shlex, shutil, signal, subprocess, sys, threading, time, urllib.request, uuid
 from typing import Dict, List, Literal, Optional, Union
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
@@ -72,7 +72,7 @@ class Thumbnail(BaseModel):   # cinematic thumbnails (infogen/thumbnail.py): Nan
     resolution: Literal["1K", "2K", "4K"] = "2K"
 class Limits(BaseModel):
     max_runtime_minutes: Optional[int] = Field(None, ge=30, le=720);   # default: 18 per minute of the long video (180 for 10 minutes)
-    max_llm_turns: int = Field(500, ge=20, le=2000)
+    max_llm_turns: int = Field(250, ge=20, le=2000)   # a whole video took 85 turns on 2026-11-01
 class Output(BaseModel):
     prefix: Optional[str] = Field(None, max_length=200, pattern=r"^infogen/[A-Za-z0-9_\-./]*$")   # the instance role can only write under infogen/
 class Callback(BaseModel):
@@ -173,6 +173,7 @@ PROCS = {}
 def spawn(j, text, resume=False):
     job = jread(j, "job.json"); req = job["request"]; log = open(os.path.join(jdir(j), "runner.jsonl"), "a")
     env = dict(os.environ, INFOGEN_JOB_ID=j, INFOGEN_REQUEST_ID=req["request_id"], PYTHONPATH=os.environ.get("INFOGEN_APP", "/app") + ":" + os.environ.get("PYTHONPATH", ""))
+    env.setdefault("ENABLE_PROMPT_CACHING_1H", "1")      # long commands outlast the 5-minute cache; each expiry rewrote the whole context
     env.setdefault("BASH_DEFAULT_TIMEOUT_MS", "600000")    # `infogen wait` blocks up to 9 minutes in one Bash call; the tool's default is 2
     env.setdefault("BASH_MAX_OUTPUT_LENGTH", "15000")      # a long command output enters the session once and is resent on every later turn
     if RUNNER == "mock":

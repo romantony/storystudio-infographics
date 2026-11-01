@@ -6,6 +6,16 @@ mode = sys.argv[1]; step = float(os.environ.get("INFOGEN_MOCK_STEP_S", "0.5"))
 req = json.load(open("request.json")); chk = req["review_mode"] == "checkpoints"
 print(json.dumps({"type": "system", "subtype": "init", "session_id": "mock-session-1"}), flush=True)
 N = [0]
+import atexit
+def result():
+    """The run's closing `result` line, with the session's totals so far (a resumed session's include its earlier runs)."""
+    tot = json.load(open(".mock_session.json")) if os.path.exists(".mock_session.json") else {"calls": 0}
+    tot["calls"] += N[0]; json.dump(tot, open(".mock_session.json", "w"))
+    k = tot["calls"]; big = "BUDGET" in req["topic"]
+    print(json.dumps({"type": "result", "subtype": "success", "session_id": "mock-session-1", "num_turns": N[0], "total_cost_usd": 0.01 * k,
+                      "modelUsage": {req["model"]: {"inputTokens": k * (10_000_000 if big else 1000), "outputTokens": 900 * k, "cacheReadInputTokens": 5000 * k,
+                                                    "cacheCreationInputTokens": 0, "costUSD": 0.01 * k}}}), flush=True)
+atexit.register(result)
 def call():
     """One API call's usage line, as Claude Code streams it (a topic containing 'BUDGET' makes every call cost about $20)."""
     N[0] += 1; big = "BUDGET" in req["topic"]

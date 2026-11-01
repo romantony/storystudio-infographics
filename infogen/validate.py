@@ -7,7 +7,7 @@ against the target, and image ids that neither exist nor are in assets.json or t
 plan itself (ids, references per frame, the budget in request.json), research/visual_facts.json and the facts the
 plan cites, and how the scenes use its frames. Exit code 1 on
 errors, 0 with warnings."""
-import json, os, sys
+import json, math, os, sys
 from collections import Counter
 from .build import TYPES, items_of
 from .common import find_asset, load
@@ -16,7 +16,8 @@ from . import scene3d, timing, visual_plan as VP
 
 REQUIRED = {"illustration": ["image"], "bar_chart": ["items"], "line_chart": ["points"], "donut": ["items"], "counter": ["value"], "icons": ["total", "highlight"],
             "versus": ["a", "b"], "timeline": ["events"], "list": ["items"], "map": [], "title": ["title"], "timecard": ["text"], "text": ["text"], "clip": ["clip"], "bars3d": ["items"], "globe": [], "network3d": ["nodes", "links"]}
-FRAME_SECS = (7.5, 12)   # seconds on screen per frame: 50 to 80 frames per 10 minutes
+FRAME_SECS = (7.5, 12)   # seconds on screen per frame, of the narration actually written (50 to 80 per 10 minutes)
+SHORT_WORDS, SHORT_NARRATION_S = 130, 50   # a Short is 35 to 55 s with its 2.5 s end card: the script is held to this before tts
 DATA = {"bar_chart", "line_chart", "donut", "counter", "icons", "versus", "bars3d"}
 
 def main(cmd, argv):
@@ -60,10 +61,14 @@ def main(cmd, argv):
     secs = words / WPS
     tgt = int(argv[argv.index("--target-seconds") + 1]) if "--target-seconds" in argv else None
     if tgt and abs(secs - tgt) > tgt * 0.15: warn.append(f"estimated {secs:.0f} s of narration against a target of {tgt} s")
+    if sid and (words > SHORT_WORDS or secs > SHORT_NARRATION_S):
+        err.append(f"short {sid}: {words} words, about {secs:.0f} s of narration; a Short takes at most {SHORT_WORDS} words and {SHORT_NARRATION_S} s (35 to 55 s with the end card): cut it")
     if "--plan" in argv and not sid and secs:
         nf = len(P.get("frames", [])); per = secs / nf if nf else 0
-        if nf and not FRAME_SECS[0] <= per <= FRAME_SECS[1]:
-            warn.append(f"plan: {nf} frames for about {secs:.0f} s is one every {per:.1f} s; aim for one every {FRAME_SECS[0]} to {FRAME_SECS[1]} s (50 to 80 per 10 minutes)")
+        lo, hi = math.ceil(secs / FRAME_SECS[1]), math.floor(secs / FRAME_SECS[0])
+        msg = f"plan: {nf} frames for about {secs:.0f} s of narration is one every {per:.1f} s; this script wants {lo} to {hi} (one every {FRAME_SECS[0]} to {FRAME_SECS[1]} s)"
+        if nf and per > FRAME_SECS[1]: err.append(msg + ": add frames, or let frames carry two scenes with different crops")
+        elif nf and per < FRAME_SECS[0]: warn.append(msg)
     types = Counter(s.get("type") for s in sc)
     print(json.dumps({"scenes": len(sc), "words": words, "estimated_seconds": round(secs), "types": types, "errors": err, "warnings": warn}, indent=1))
     if err: sys.exit(1)

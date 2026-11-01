@@ -90,7 +90,11 @@ These videos are built around one strong question and a relentless visual rhythm
 
 **Rubrics.** First run `python3 -m infogen rubric show script research`. These are the criteria the Quality and Research Analysts will score your work against. Earlier runs built them from what went wrong before, so meet them from the start, not after the review.
 
-**Research.** Before writing, research the topic with WebSearch and WebFetch. Write `research/sources.md`: every number, date and claim you will use, each with its source (publisher, title, year, URL). Prefer primary and official sources (statistics agencies, company filings, peer-reviewed papers, major newspapers). Numbers on screen come only from this file. If a number cannot be sourced, do not show it. If the topic is breaking news, say in a warning how fresh the sources are.
+**Research.** Before writing, research the topic with WebSearch and WebFetch. Write `research/sources.md`: every number, date and claim you will use, each with its source (publisher, title, year, URL). Prefer primary and official sources (statistics agencies, company filings, peer-reviewed papers, major newspapers). Two rules the Research Analyst enforces as must-fix:
+- Cite every key historical claim from its primary source: the text of the law, order, ruling or treaty, or the official statistic, from a national archive, the Federal Register, a statistics agency or a central bank. A secondary write-up may add context but never stands alone.
+- Take every price and market figure from at least two independent sources, each cited with its date. Two pages copying one feed count as one. Where they disagree, name the benchmark you use (spot or futures, which exchange).
+
+Numbers on screen come only from this file. If a number cannot be sourced, do not show it. If the topic is breaking news, say in a warning how fresh the sources are.
 
 **Visual facts.** Every project, whatever its topic, also gets `research/visual_facts.json` (format: the docstring of `/app/infogen/visual_plan.py`). It records what the things on screen really look like, so the pictures match the story's time and place instead of the model's defaults:
 1. **From the topic and synopsis,** settle the `era`: the time and place the pictures show, for example `"Berlin, 1948-49"`, `"Chernobyl, Soviet Ukraine, April 1986"` or `"present day, United States"`.
@@ -132,14 +136,14 @@ In every prompt, name things by their specific type from the visual facts ("the 
 
 **Script.** Write `script/script.json` (format: `python3 -m infogen build` docstring and `/app/docs/SCENES.md`). Narration runs at about 2.6 words per second, so `target_seconds` of 600 means about 1,550 words. Set `narrator_voice` from the request, `captions` from `visuals.captions_long`, `series` and `next` from the series details, and a `chapter` on the first scene of each section (at least three). Put `"verify": true` and a `verify_note` naming the source on every scene that states a number, date, quotation or causal claim, and a short `source` on every data scene (it is shown on screen). Do not present a paraphrase as a quotation.
 
-Then write the Shorts in `shorts/<id>/script.json`, one per requested angle (`a_hook`, `b_stat`, `c_twist`, and so on, in order): the same scene format, 35 to 55 seconds, 90 to 130 words, 7 to 11 scenes of 3 to 6 seconds, the hook in the first sentence, exactly one data scene, captions on (from `visuals.captions_shorts`). Shorts reuse the long video's art.
+Then write the Shorts in `shorts/<id>/script.json`, one per requested angle (`a_hook`, `b_stat`, `c_twist`, and so on, in order): the same scene format, 35 to 55 seconds including the 2.5 s end card, 90 to 130 words (hard limits: `validate --short` fails a script over 130 words or 50 s of narration, and `build --short` refuses a Short over 55 s), 7 to 11 scenes of 3 to 6 seconds, the hook in the first sentence, exactly one data scene, captions on (from `visuals.captions_shorts`). Shorts reuse the long video's art.
 
 **Visual plan.** Write `plan/visual_plan.json` (format: the docstring of `/app/infogen/visual_plan.py`) at the same time as the script, so the checkpoint covers both. Every illustration scene shows a **frame**, and every frame is composed from **references** drawn in one style:
 - `characters`: every recurring person or group, as `{id}` from `cast` plus a neutral pose. One reference per person, reused in every frame.
 - `objects`: every recurring vehicle, aircraft, weapon or prop, with its specific type.
 - `backgrounds`: every recurring place, as an **empty** set with no people and room for figures.
 - Every object and background lists the visual facts it is drawn from in `facts` (ids from `research/visual_facts.json`); so do characters in a uniform or period dress, and frames with no background that show a specific thing. The facts' `looks` are added to the prompt automatically, so the prompt itself can stay short. `validate --plan` rejects a missing facts file, an object or background that cites none, and an unknown id.
-- `frames`: one per visual beat, **50 to 80 per 10 minutes**: each frame is on screen for 8 to 12 seconds. Each has:
+- `frames`: one per visual beat, **one frame every 7.5 to 12 seconds of the narration you actually wrote** (50 to 80 per 10 minutes). If the script comes out shorter than the target, size the plan to the script, not to the target: `validate --plan` prints the range this script wants and fails a plan with fewer. Each has:
   - its `background` and up to 3 `refs`, characters or objects by id;
   - a `prompt` with the action and the placement. Say where each figure stands and how big it is, for example "the pilot stands on the left, fully visible, about half the frame height".
   - A third ref is added in a second pass, described in `add`.
@@ -246,7 +250,8 @@ Pictures come from Nano Banana 2.1 on KIE, and the headline is typeset exactly o
 2. **Generate:** `python3 -m infogen thumbnail generate`. It makes `thumbnail.candidates` per target (default 3) and sets each headline. This takes a few minutes: run it in the background and `wait` for it with `--pid` (it ends when every candidate is written).
 3. **Score:** run `python3 -m infogen analyst thumbnail` in the background and `wait` for `review/thumbnail.json`. The Thumbnail Analyst opens every candidate and scores it.
 4. **Pick:** `python3 -m infogen thumbnail select`. It takes the best candidate per target that has the exact text, is accurate and scores at least 80.
-   - If a target falls short, revise its plan from the analyst's findings and run `thumbnail generate --only <id> --more 3`, then score and select again.
+   - The pass mark is 80. If a target falls short, do not re-roll the same brief: change the concept or the layout (a different hero or framing, the headline on the other side or split differently, a different visual cue for the number), guided by the analyst's findings, then run `thumbnail generate --only <id> --more 3`, score and select again.
+   - Before generating, check every target's headline `text` against `research/sources.md` and the script: a wrong number on a thumbnail wastes a whole round.
    - After two such rounds, run `thumbnail select --accept-best` and say so in a warning.
 5. **Insert:** after the Shorts are built, put each Short's thumbnail into it as a cover frame with `python3 -m infogen thumbnail cover --short <id>` (when `thumbnail.shorts_cover`). YouTube Shorts take their thumbnail from a frame.
 6. **Report:** look at the chosen thumbnails yourself. Record `--cost thumbnail_images=<generated>`, and name the alternatives in `thumb/selection.json` in a warning.
@@ -257,7 +262,7 @@ If `KIE_API_KEY` is not set (`generate` says so), fall back to `thumb`: two or t
 
 ## Things you cannot do, and must say
 
-You cannot hear audio. Every package therefore needs the warning "No audio has been listened to" and a human listen before publishing: voice pronunciation of names and numbers, music level and loop seams are unverified. Report measured loudness and peak instead, from `ffmpeg -af ebur128` and `volumedetect`.
+You cannot hear audio. Every package therefore needs the warning "No audio has been listened to" and a human listen before publishing: voice pronunciation of names and numbers, music level and loop seams are unverified. `build --run` normalises the mix itself (-14 LUFS for the long video, -13 for Shorts, true peak under -1.5 dBTP) and prints the measured `loudness:` line: report those figures, and do not change the levels by hand.
 
 You cannot verify facts beyond your sources. Report the number of `verify` scenes as a warning, and any number you had to drop for lack of a source.
 

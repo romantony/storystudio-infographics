@@ -120,8 +120,9 @@ StoryStudio does this in `backend/convex/e2e/infographicSeries.ts`. Each episode
 ## Claude usage per job
 
 The status object has an extra field, `llm`: the job's Claude token usage and a USD estimate from list prices
-(`{"usd_estimate", "calls", "input", "output", "cache_read", "cache_write", "by_step": {"producer": {...}, "analyst/qa": {...}, "scene3d": {...}}}`),
-or `null` before the first call. A job whose estimate passes `INFOGEN_MAX_LLM_USD` (default $30) is stopped and fails with the error code
+(`{"usd_estimate", "calls", "input", "output", "cache_read", "cache_write", "cache_write_1h", "by_step": {"producer": {..., "exact"}, "analyst/qa": {...}, "scene3d": {...}}}`),
+or `null` before the first call. The producer's figures are Claude Code's own totals once a run has ended (`exact: true`) and an
+estimate while it runs. A job whose figure passes `INFOGEN_MAX_LLM_USD` (default $15) is stopped and fails with the error code
 `llm_budget_exceeded` and `retryable: false`: do not retry it automatically; look at `llm.by_step` first.
 
 ## Cost and time per 10-minute video (estimates to confirm on the first real runs)
