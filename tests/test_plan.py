@@ -97,7 +97,7 @@ check("refs: characters and objects cut out, backgrounds not", all(os.path.exist
 calls.clear(); q("refs")
 check("refs again: nothing resubmitted", calls == [], calls)
 
-calls.clear(); q("frames")
+calls.clear(); rp.KIE_ROUTES.clear(); q("frames")   # the RunPod (qwen edit) layout; the KIE one is checked below
 by = {i["frame_id"]: (e, i) for e, i in calls}
 check("frames: 3 jobs", sorted(by) == ["f1", "f2", "f3"], sorted(by))
 st = json.load(open("build/queue_state.json")); url = lambda i: st[i]["url"]
@@ -105,6 +105,10 @@ e, f1 = by["f1"]
 check("f1: background then first two refs as image 1-3", e == "qedit" and f1["image_urls"] == [url("field"), url("pilot"), url("kids")], f1.get("image_urls"))
 check("f1: third ref added in pass 2 with its own image", len(f1["passes"]) == 2 and f1["passes"][1]["image_urls"] == [url("c54")] and "Add the transport plane from image 2" in f1["passes"][1]["prompt"]
       and "the plane flies low" in f1["passes"][1]["prompt"], f1["passes"])
+refs_ = VP.refs_by_id(PLAN); stl = {**json.load(open("style.json")), "era": "Berlin, 1948", "palette_prompt": "muted colours"}
+one = VP.frame_passes(next(f for f in PLAN["frames"] if f["id"] == "f1"), refs_, stl, FACTS, single=True)
+check("f1 on KIE (Nano Banana, up to 10 images): one pass places all three refs as images 2-4 and joins `add`", len(one) == 1
+      and "the transport plane from image 4" in one[0]["prompt"] and "the plane flies low" in one[0]["prompt"], one)
 check("f1: pass 1 names the refs by label and image number", "Place the pilot from image 2; the children from image 3" in f1["passes"][0]["prompt"] and f1["aspect_ratio"] == "16:9", f1["passes"][0]["prompt"])
 e, f2 = by["f2"]
 check("f2: one ref, one pass", f2["image_urls"] == [url("field"), url("pilot")] and len(f2["passes"]) == 1, f2)

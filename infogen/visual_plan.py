@@ -16,8 +16,9 @@ plan/visual_plan.json:
   but of ..."), on plain white (characters, objects). Backgrounds are drawn onto a blank canvas with the anchor as image
   2, as an empty set: with the anchor as image 1 its person stays in the picture. Restyling a detailed picture does not
   work; drawing new from the anchor does. Characters and objects are also cut out, for thumbnails.
-- A frame is one qwen-image-edit job: image 1 is its background, images 2-3 its first two refs; a third ref is added in
-  a second pass, described by `add`. A frame with no background is text-to-image from its prompt and takes no refs.
+- A frame is one image-edit job: image 1 is its background, images 2-4 its refs. On Nano Banana 2.1 (KIE, the default,
+  see infogen/rp.py) that is one edit with `add` joined to the prompt; on RunPod's qwen-image-edit (3 images a pass) the
+  third ref is added in a second pass, described by `add`. A frame with no background is text-to-image from its prompt and takes no refs.
 - `label` is how a prompt names the reference ("the pilot"); default: the id with spaces.
 - `facts` on a reference or frame names entries of research/visual_facts.json; their `looks` are added to its prompt, so
   the model draws the right thing rather than its default one. Every object and background cites at least one.
@@ -185,20 +186,24 @@ def blank(aspect):
     b = io.BytesIO(); Image.new("RGB", (round(W / 32) * 32, round(W / ratio / 32) * 32), "white").save(b, "PNG")
     return base64.b64encode(b.getvalue()).decode()
 
-def frame_passes(f, refs, st, facts=None):
+def frame_passes(f, refs, st, facts=None, single=False):
+    """The edit prompt(s) of a frame. Qwen edit takes 3 images, so a third ref is added in a second pass; Nano Banana on KIE
+    (single=True) takes up to 10, so every ref is placed in one pass and `add` joins the prompt."""
     rs = [refs[r][1] for r in f.get("refs", [])]
     era = f" Everything historically accurate for {st['era']}." if st.get("era") else ""
     look = f" Same flat vector style, flat colours, bold outlines, no gradients, {st['palette_prompt']}.{era} No text, no letters."
-    placed = "; ".join(f"{label(r)} from image {i + 2}" for i, r in enumerate(rs[:2]))
+    placed = "; ".join(f"{label(r)} from image {i + 2}" for i, r in enumerate(rs if single else rs[:2]))
     p1 = ("Flat vector infographic scene in the same style as the reference images. Use image 1 as the setting and keep it. "
           + (f"Place {placed}, keeping their exact faces, outfits, proportions and colours unchanged. " if placed else "")
-          + f"{STY.expand(f['prompt'], st)}.{facts_line(f, facts)} Every figure is fully inside the frame at a natural size for the setting, no extra people."
+          + f"{STY.expand(f['prompt'], st)}.{facts_line(f, facts)}"
+          + (f" {STY.expand(f['add'], st)}." if single and len(rs) == MAX_IMAGES and f.get("add") else "")
+          + " Every figure is fully inside the frame at a natural size for the setting, no extra people."
           # frames to be animated: a distorted, crowded or wrong-facing frame becomes a distorted clip
           + (" Composed for animation: every figure large, fully visible and clearly separated, clean hands and faces, nothing overlapping a figure, "
              "open space in the direction any subject will move." if f.get("animate") else "")
           + look)
     passes = [{"prompt": p1}]
-    if len(rs) == MAX_IMAGES:
+    if len(rs) == MAX_IMAGES and not single:
         passes.append({"prompt": f"Keep image 1 exactly as it is, including everyone in it. Add {label(rs[2])} from image 2, keeping its exact shape and colours: "
                                  f"{STY.expand(f['add'], st)}.{look}"})
     return passes
@@ -257,7 +262,9 @@ def run(plan, st, state, save, pid, only, failed, facts=None):
             if not f.get("background"):
                 jobs[f["id"]] = ("qwen", {"model": "qwen", "prompt": STY.image_prompt(f["prompt"] + facts_line(f, facts), st), "aspect_ratio": f.get("aspect", "16:9"), **base, "frame_id": f["id"]})
                 continue
-            passes = frame_passes(f, refs, st, facts)
+            single = rp.routed("qedit")
+            passes = frame_passes(f, refs, st, facts, single=single)
             if len(passes) > 1: passes[1]["image_urls"] = [url(f["refs"][2])]
-            jobs[f["id"]] = ("qedit", {"image_urls": [url(i) for i in need[:MAX_IMAGES]], "passes": passes, "aspect_ratio": f.get("aspect", "16:9"), **base, "frame_id": f["id"]})
+            jobs[f["id"]] = ("qedit", {"image_urls": [url(i) for i in (need if single else need[:MAX_IMAGES])], "passes": passes,
+                                       "aspect_ratio": f.get("aspect", "16:9"), **base, "frame_id": f["id"]})
         stage(jobs)

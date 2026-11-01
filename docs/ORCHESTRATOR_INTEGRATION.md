@@ -127,5 +127,5 @@ estimate while it runs. A job whose figure passes `INFOGEN_MAX_LLM_USD` (default
 
 ## Cost and time per 10-minute video (estimates to confirm on the first real runs)
 
-- Paid generations: 50 to 80 frames (Qwen Image Edit, about 15 s each on an A40), up to 24 references (about 8 s each), up to 16 Wan2.2 clips of 5 s at the default cap (20 % of 80 frames), any LTX hero shots of 10 s (Qwen and Wan on RunPod), 4 music tracks, about 90 TTS calls (one per scene, long and Shorts), one Whisper call per scene. No stock footage.
+- Paid generations: 50 to 80 frames and up to 24 references (Nano Banana 2.1 on KIE; 4 credits = $0.02 an image at 1K, measured 2026-11-01; the default 2K costs more), up to 16 Wan2.2 clips of 5 s at the default cap (20 % of 80 frames, on RunPod), any LTX hero shots of 10 s, 4 music tracks (Suno on KIE, 12 credits = $0.06 a track), every KIE task's credits in `build/kie_costs.jsonl`, about 90 TTS calls (one per scene, long and Shorts), one Whisper call per scene. No stock footage.
 - Rendering is CPU work in the container: about 0.3 to 0.5 seconds per frame per core-pair on a small machine, so give the instance at least 8 vCPUs (`INFOGEN_RENDER_CONCURRENCY` sets Remotion's parallel tabs; default half the cores). A 10-minute video is 18,000 frames.

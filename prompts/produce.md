@@ -14,7 +14,7 @@ Everything runs from the run folder with `python3 -m infogen <command>`. Each co
 |---|---|
 | `status` | Report progress. See "Reporting". |
 | `style` | Print the resolved look (palette, art prompts, cast). |
-| `queue` | Generate from one file, resumably: a visual plan (`plan/visual_plan.json`: references drawn from the style anchor, then frames composed from them with Qwen Image Edit), or `assets.json` (music from ACE-Step and single text-to-image pictures). |
+| `queue` | Generate from one file, resumably: a visual plan (`plan/visual_plan.json`: references drawn from the style anchor, then frames composed from them with Nano Banana 2.1 on KIE, every ref in one edit), or `assets.json` (music from Suno on KIE, and single text-to-image pictures). |
 | `cutout` | Cut a character out of its plain background again (with another `--tol`). |
 | `validate` | Check a script before anything is paid for: types, fields, cues, sources, pacing, length, assets. |
 | `tts`, `timings` | Narration (Gemini TTS) and Whisper word timings, per scene, for the long video or `--short <id>`. |
