@@ -54,9 +54,9 @@ def prompt(s, brief):
 def ask(text, model):
     cmd = os.environ.get("INFOGEN_SCENE3D_CMD")
     if cmd: return subprocess.run(cmd, shell=True, input=text, capture_output=True, text=True, timeout=900).stdout
-    out = subprocess.run(["claude", "-p", text, "--model", model, "--output-format", "json", "--max-turns", "2", "--allowedTools", ""], capture_output=True, text=True, timeout=900)
-    try: return json.loads(out.stdout).get("result", "")
-    except Exception: return out.stdout
+    from infogen import llm
+    try: return llm.run(text, model, "scene3d", tools="", max_turns=2, max_usd=float(os.environ.get("INFOGEN_SCENE3D_MAX_USD", "2")), timeout=900)
+    except RuntimeError as e: sys.exit(str(e))
 
 def parse(reply):
     m = re.search(r"```(?:json)?\s*(\{.*\})\s*```", reply, re.S)

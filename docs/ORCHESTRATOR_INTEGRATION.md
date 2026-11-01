@@ -117,6 +117,13 @@ The live rubrics are kept on the runs volume (`<INFOGEN_RUNS_DIR>/_rubrics`, wit
 
 StoryStudio does this in `backend/convex/e2e/infographicSeries.ts`. Each episode's completion starts the next. A failed episode is recorded and the series carries on, while one cancelled by its reviewer stops the series.
 
+## Claude usage per job
+
+The status object has an extra field, `llm`: the job's Claude token usage and a USD estimate from list prices
+(`{"usd_estimate", "calls", "input", "output", "cache_read", "cache_write", "by_step": {"producer": {...}, "analyst/qa": {...}, "scene3d": {...}}}`),
+or `null` before the first call. A job whose estimate passes `INFOGEN_MAX_LLM_USD` (default $30) is stopped and fails with the error code
+`llm_budget_exceeded` and `retryable: false`: do not retry it automatically; look at `llm.by_step` first.
+
 ## Cost and time per 10-minute video (estimates to confirm on the first real runs)
 
 - Paid generations: 50 to 80 frames (Qwen Image Edit, about 15 s each on an A40), up to 24 references (about 8 s each), up to 16 Wan2.2 clips of 5 s at the default cap (20 % of 80 frames), any LTX hero shots of 10 s (Qwen and Wan on RunPod), 4 music tracks, about 90 TTS calls (one per scene, long and Shorts), one Whisper call per scene. No stock footage.

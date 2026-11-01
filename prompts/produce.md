@@ -26,8 +26,26 @@ Everything runs from the run folder with `python3 -m infogen <command>`. Each co
 | `upload` | Copy finished outputs to the output bucket. |
 | `rubric show` | Print the rubrics the analysts score against, built up by every earlier run. |
 | `analyst` | `analyst research` or `analyst qa`: an independent review of the scripts, plan and research against the rubrics. |
+| `wait` | Block until background work has written its files (see "Background work"). |
 
 You also have WebSearch and WebFetch for research.
+
+## Keep the session small
+
+Every turn resends the whole session so far, so what you read stays in the bill until the job ends.
+- Read only what you need. Use `tail -n 40`, `grep` or `python3 -c` on logs and long JSON files instead of reading them whole, and never read `runner.jsonl`, `llm_usage.json`, `build/queue_state.json` or media files.
+- Look at pictures through contact sheets (`sheet`), and open an image at full size only when a sheet shows a problem or the rules below ask for it (frames to be animated, the chosen thumbnails).
+- Do several steps per turn where you can: chain commands that don't need you to look at their output in between.
+
+## Background work
+
+Slow commands (the analysts, `thumbnail generate`) run in the background. Never check on them turn after turn: start them and wait for their files in the same command with `wait`, which returns as soon as the files exist:
+
+    nohup python3 -m infogen analyst research > review_research.log 2>&1 & R=$!
+    nohup python3 -m infogen analyst qa > review_qa.log 2>&1 & Q=$!
+    python3 -m infogen wait review/research.json review/qa.json --pid $R --pid $Q
+
+It prints `ready`, `exited` (a process ended without its file: read the end of its log) or, after about nine minutes, `waiting`: then run `python3 -m infogen wait <the same files>` again.
 
 ## Reporting
 
@@ -168,19 +186,14 @@ Run `validate` (with `--assets assets.json --plan plan/visual_plan.json --target
 - the **Research Analyst**: sources, claims, visual facts and era;
 - the **Quality Analyst**: script, Shorts and visual plan.
 
-Each runs as its own Claude session, scores the work against its rubric and writes `review/research.md` or `review/qa.md` (with `.json` twins). Each run takes several minutes, so start both in the background and wait for both reports:
-
-    nohup python3 -m infogen analyst research > review_research.log 2>&1 &
-    nohup python3 -m infogen analyst qa > review_qa.log 2>&1 &
-
-Check every minute or so until `review/research.json` and `review/qa.json` both exist, and read the logs if one fails.
+Each runs as its own Claude session, scores the work against its rubric and writes `review/research.md` or `review/qa.md` (with `.json` twins). Each takes several minutes: start both in the background and wait for `review/research.json` and `review/qa.json`, as shown under "Background work".
 
 Then read both reports:
 - Fix every `must_fix`.
 - Fix every `should_fix` unless you disagree for a stated reason: say which ones you rejected, and why, in a warning.
 - Take the suggestions that are cheap and clearly better.
 
-Run `validate` again, then check the fixes with `python3 -m infogen analyst research --verify` and `python3 -m infogen analyst qa --verify`. These run in the background too, write `review/<role>_verify.md` and record nothing.
+Run `validate` again, then check the fixes with `python3 -m infogen analyst research --verify` and `python3 -m infogen analyst qa --verify`. These run in the background the same way (wait for `review/research_verify.json` and `review/qa_verify.json`), write `review/<role>_verify.md` and record nothing.
 
 Report the result as a warning, for example "analysts: research 2 must-fix and 3 should-fix, qa 1 must-fix and 4 should-fix; all must-fix resolved; 2 should-fix rejected: ...". The analysts' new guidelines are added to the rubrics automatically, so the next run is checked against them.
 
@@ -230,8 +243,8 @@ Pictures come from Nano Banana 2.1 on KIE, and the headline is typeset exactly o
    - `placement` (16:9), `colors`, `accent`, the `refs` (the references and frames of people, machines and places that appear, so the thumbnail matches the video) and the `facts` (visual-facts ids).
 
    Give every Short its own angle: hook, stat or twist. Choose the `preset` (`python3 -m infogen thumbnail presets`) when `thumbnail.style` is `"auto"`; otherwise use the request's. Run `python3 -m infogen thumbnail check` and fix every error.
-2. **Generate:** `python3 -m infogen thumbnail generate`. It makes `thumbnail.candidates` per target (default 3) and sets each headline. This takes a few minutes, so run it in the background.
-3. **Score:** run `python3 -m infogen analyst thumbnail` in the background and wait for `review/thumbnail.json`. The Thumbnail Analyst opens every candidate and scores it.
+2. **Generate:** `python3 -m infogen thumbnail generate`. It makes `thumbnail.candidates` per target (default 3) and sets each headline. This takes a few minutes: run it in the background and `wait` for it with `--pid` (it ends when every candidate is written).
+3. **Score:** run `python3 -m infogen analyst thumbnail` in the background and `wait` for `review/thumbnail.json`. The Thumbnail Analyst opens every candidate and scores it.
 4. **Pick:** `python3 -m infogen thumbnail select`. It takes the best candidate per target that has the exact text, is accurate and scores at least 80.
    - If a target falls short, revise its plan from the analyst's findings and run `thumbnail generate --only <id> --more 3`, then score and select again.
    - After two such rounds, run `thumbnail select --accept-best` and say so in a warning.

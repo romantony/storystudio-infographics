@@ -61,7 +61,10 @@ def start():
     if not V.ready(c, need_ltx=req.visuals.ltx_clips > 0): fail_early("not_ready", json.dumps(c))
     with index_lock():
         idx = V.index()
-        if req.request_id in idx: fail_early("duplicate_request", f"request_id {req.request_id} already has job {idx[req.request_id]}", idx[req.request_id])
+        # A request whose job failed may start again (a redrive of the execution, e.g. after the Anthropic balance ran out):
+        # the new job replaces it in the index; the failed job's folder stays. A running, waiting, finished or cancelled job still refuses.
+        old = idx.get(req.request_id)
+        if old and V.jread(old, "state.json", {}).get("state") != "failed": fail_early("duplicate_request", f"request_id {req.request_id} already has job {old}", old)
         j = "ig_" + uuid.uuid4().hex[:12]; os.makedirs(V.jdir(j))
         idx[req.request_id] = j; V.jwrite("", "index.json", idx)
     r = req.model_dump(); r["output"]["prefix"] = r["output"]["prefix"] or f"infogen/{req.request_id}/"

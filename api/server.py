@@ -3,7 +3,8 @@ Same lifecycle as the docgen (documentary) service: see docs/ORCHESTRATOR_INTEGR
 
 Env: INFOGEN_API_TOKEN (required), INFOGEN_CALLBACK_SECRET, INFOGEN_RUNS_DIR (/data/runs), INFOGEN_RUNNER (claude|mock),
      INFOGEN_IMAGE, INFOGEN_ORIGIN_SECRET (CloudFront origin header), INFOGEN_PROMPT (/app/prompts/produce.md), INFOGEN_CLAUDE_FLAGS, INFOGEN_HEARTBEAT_S (60),
-     INFOGEN_KEEP_RUNS (3: full run folders kept for the newest finished jobs)"""
+     INFOGEN_KEEP_RUNS (3: full run folders kept for the newest finished jobs),
+     INFOGEN_CLAUDE_TOOLS, INFOGEN_MAX_LLM_USD (30: the job is stopped when its Claude spend estimate passes it; see infogen/llm.py)"""
 import hashlib, hmac, json, os, queue, re, shlex, shutil, signal, subprocess, sys, threading, time, urllib.request, uuid
 from typing import Dict, List, Literal, Optional, Union
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
@@ -11,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from infogen import status as S
+from infogen import llm, status as S
 
 RUNS = os.environ.get("INFOGEN_RUNS_DIR", "/data/runs")
 TOKEN = os.environ.get("INFOGEN_API_TOKEN", "")
@@ -123,7 +124,7 @@ def public(j):
     out = {"job_id": j, "request_id": job.get("request_id"), "seq": st.get("seq", 0), "state": st.get("state", "running"),
            "stage": a.get("stage", "setup"), "stages_done": a.get("stages_done", []), "progress": a.get("progress", 0.0), "message": a.get("message", ""),
            "next_steps": a.get("next_steps", []), "awaiting": a.get("awaiting") if st.get("state") == "awaiting_input" else None,
-           "warnings": a.get("warnings", []), "outputs": a.get("outputs", []), "costs": a.get("costs", {}),
+           "warnings": a.get("warnings", []), "outputs": a.get("outputs", []), "costs": a.get("costs", {}), "llm": llm.summary(jdir(j)),
            "error": st.get("error") or a.get("error"), "created_at": job.get("created_at"), "stage_started_at": a.get("stage_started_at"), "updated_at": st.get("updated_at")}
     if out["state"] == "succeeded": out["progress"] = 1.0
     return out
@@ -172,10 +173,13 @@ PROCS = {}
 def spawn(j, text, resume=False):
     job = jread(j, "job.json"); req = job["request"]; log = open(os.path.join(jdir(j), "runner.jsonl"), "a")
     env = dict(os.environ, INFOGEN_JOB_ID=j, INFOGEN_REQUEST_ID=req["request_id"], PYTHONPATH=os.environ.get("INFOGEN_APP", "/app") + ":" + os.environ.get("PYTHONPATH", ""))
+    env.setdefault("BASH_DEFAULT_TIMEOUT_MS", "600000")    # `infogen wait` blocks up to 9 minutes in one Bash call; the tool's default is 2
+    env.setdefault("BASH_MAX_OUTPUT_LENGTH", "15000")      # a long command output enters the session once and is resent on every later turn
     if RUNNER == "mock":
         cmd = [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "mock_runner.py"), "resume" if resume else "start", text]
     else:
-        cmd = ["claude", "-p", text, "--model", req["model"], "--output-format", "stream-json", "--verbose", "--max-turns", str(req["limits"]["max_llm_turns"])] + shlex.split(CLAUDE_FLAGS)
+        cmd = (["claude", "-p", text, "--model", req["model"], "--output-format", "stream-json", "--verbose", "--max-turns", str(req["limits"]["max_llm_turns"]),
+                "--tools", llm.PRODUCER_TOOLS] + llm.COMMON + shlex.split(CLAUDE_FLAGS))
         sid = jread(j, "state.json", {}).get("session_id")
         if resume and sid: cmd += ["--resume", sid]
     p = subprocess.Popen(cmd, cwd=jdir(j), stdout=log, stderr=subprocess.STDOUT, env=env, start_new_session=True)
@@ -197,9 +201,16 @@ def finish(j, state, error=None):
 def watch(j):
     """Follow status.json for one run of the runner process: turn changes into events, send heartbeats, decide the outcome."""
     p = PROCS[j]; sp = os.path.join(jdir(j), "status.json"); last = S.read(sp); last_beat = time.time()
-    deadline = jread(j, "job.json")["deadline"]
+    deadline = jread(j, "job.json")["deadline"]; meter = llm.Meter(jdir(j)); cap = llm.max_job_usd()
     while True:
         rc = p.poll(); a = S.read(sp)
+        try: spent = meter.poll()["usd"]
+        except Exception: spent = 0.0                       # the ledger must never stop a healthy job
+        if cap and spent > cap:
+            kill(j); meter.poll()
+            finish(j, "failed", {"code": "llm_budget_exceeded", "stage": a.get("stage"), "retryable": False,
+                                 "message": f"Claude spend estimate ${spent:.2f} passed the ${cap:g} cap for one job (INFOGEN_MAX_LLM_USD); stopped. llm.by_step in the status shows where it went."})
+            return
         if a and a != last:
             if a.get("stage") != last.get("stage"):
                 if last.get("stage"): emit(j, "stage.completed")
@@ -211,9 +222,11 @@ def watch(j):
         if st.get("state") == "cancelled": return
         if rc is not None: break
         if time.time() > deadline:
-            kill(j); finish(j, "failed", {"code": "timeout", "stage": a.get("stage"), "message": "max_runtime_minutes exceeded", "retryable": True}); return
+            kill(j); meter.poll(); finish(j, "failed", {"code": "timeout", "stage": a.get("stage"), "message": "max_runtime_minutes exceeded", "retryable": True}); return
         if time.time() - last_beat >= HEARTBEAT: emit(j, "job.heartbeat", bump=False); last_beat = time.time()
         time.sleep(1)
+    try: meter.poll()
+    except Exception: pass
     with LOCK:
         st = jread(j, "state.json", {}); sid = session_id(j)
         if sid: st["session_id"] = sid; jwrite(j, "state.json", st)

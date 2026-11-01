@@ -54,10 +54,13 @@ Use `--warn "<text>"` for anything the reviewer must know. If you cannot finish,
 
    Write a shared `cast` only if one to three recurring characters (a narrator figure, a guide) would help the series. Give each a fixed, specific visual description, and use none based on a real, identifiable person. Keep any cast from `visuals.cast` exactly as given.
 4. **Run `python3 -m infogen series series/series.json`** and fix every error. It then fills in the publish dates, the next titles, the Short angles and the style. It also writes the overview the reviewer reads, as `series/series.md` and `series/series.pdf` (the PDF is the link StoryStudio shares).
-   - **Review by the analysts.** The **Research Analyst** checks that every synopsis is true and sourced. The **Quality Analyst** checks the series as a series. Start both in the background, and wait until `review/research.json` and `review/qa.json` both exist:
+   - **Review by the analysts.** The **Research Analyst** checks that every synopsis is true and sourced. The **Quality Analyst** checks the series as a series. Start both in the background and wait for their reports in the same command (never check on them turn after turn: every turn resends the whole session):
 
-         nohup python3 -m infogen analyst research > review_research.log 2>&1 &
-         nohup python3 -m infogen analyst qa > review_qa.log 2>&1 &
+         nohup python3 -m infogen analyst research > review_research.log 2>&1 & R=$!
+         nohup python3 -m infogen analyst qa > review_qa.log 2>&1 & Q=$!
+         python3 -m infogen wait review/research.json review/qa.json --pid $R --pid $Q
+
+     `wait` prints `ready`, `exited` (a process ended without its report: read the end of its log) or, after about nine minutes, `waiting`: then run `python3 -m infogen wait review/research.json review/qa.json` again.
 
      Fix every `must_fix` and, unless you disagree for a stated reason, every `should_fix`. Then run `series` again and check with `analyst research --verify` and `analyst qa --verify`. Report the result as a warning, like a video's analysts.
 5. **Checkpoint.** When `review_mode` is `checkpoints`:
