@@ -37,10 +37,10 @@ from infogen.narration import paths
 sp = paths(None)[0]; os.makedirs(os.path.dirname(sp) or ".", exist_ok=True)
 json.dump({"slug": "t", "scenes": [bars]}, open(sp, "w"))
 reply = os.path.join(d, "reply.txt"); open(reply, "w").write("```json\n" + json.dumps({"camera": {"az": [-10, 10], "el": [15, 30], "dist": [1.2, 0.9]}, "items": [{"cue": "America"}, {"cue": "China"}]}) + "\n```")
-r = subprocess.run([sys.executable, "-m", "infogen", "scene3d", "1"], cwd=d, env={**os.environ, "PYTHONPATH": ROOT, "INFOGEN_SCENE3D_CMD": f"cat {reply}"}, capture_output=True, text=True)
+r = subprocess.run([sys.executable, "-m", "infogen", "scene3d", "1"], cwd=d, env={**os.environ, "PYTHONPATH": ROOT, "INFOGEN_LLM_CACHE": "off", "INFOGEN_SCENE3D_CMD": f"cat {reply}"}, capture_output=True, text=True)
 got = json.load(open(sp))["scenes"][0]
 check("scene3d command writes the plan back", r.returncode == 0 and got["camera"]["el"] == [15, 30] and got["items"][1]["cue"] == "China" and got["items"][1]["value"] == 296, (r.stdout, r.stderr, got))
 open(reply, "w").write("```json\n{\"camera\": \"nonsense\"}\n```")
-r = subprocess.run([sys.executable, "-m", "infogen", "scene3d", "1"], cwd=d, env={**os.environ, "PYTHONPATH": ROOT, "INFOGEN_SCENE3D_CMD": f"cat {reply}"}, capture_output=True, text=True)
+r = subprocess.run([sys.executable, "-m", "infogen", "scene3d", "1"], cwd=d, env={**os.environ, "PYTHONPATH": ROOT, "INFOGEN_LLM_CACHE": "off", "INFOGEN_SCENE3D_CMD": f"cat {reply}"}, capture_output=True, text=True)
 check("a bad plan is rejected and the script is left alone", r.returncode != 0 and json.load(open(sp))["scenes"][0]["camera"]["el"] == [15, 30], (r.stdout, r.stderr))
 sys.exit(1 if fails else 0)

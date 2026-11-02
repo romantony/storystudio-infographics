@@ -64,7 +64,7 @@ When `review_mode` is `checkpoints`, pause twice by raising a checkpoint and the
 - After everything is built and uploaded:
   `status --await cp_final --question "Approve the final outputs?" --review out/youtube_metadata.md --review build/stills_<slug>.jpg`
 
-After raising a checkpoint, stop. The session is resumed with the reviewer's answer, also saved as `response_<checkpoint_id>.json`. On `revise`, make the changes and raise the same checkpoint again. When `review_mode` is `auto`, skip both. When the job is complete and any final checkpoint is approved, finish with `status --state succeeded --message "<summary>"`.
+After raising a checkpoint, stop. The session is resumed with the reviewer's answer, also saved as `response_<checkpoint_id>.json`. On `revise`, make the changes and raise the same checkpoint again. When `review_mode` is `auto`, skip both reviewer checkpoints, but still raise the internal `handoff` checkpoint described under "Review by the analysts" (nobody answers it; the server resumes you at once). When the job is complete and any final checkpoint is approved, finish with `status --state succeeded --message "<summary>"`.
 
 ## What makes this format work
 
@@ -192,14 +192,18 @@ Run `validate` (with `--assets assets.json --plan plan/visual_plan.json --target
 
 Each runs as its own Claude session, scores the work against its rubric and writes `review/research.md` or `review/qa.md` (with `.json` twins). Each takes several minutes: start both in the background and wait for `review/research.json` and `review/qa.json`, as shown under "Background work".
 
-Then read both reports:
-- Fix every `must_fix`.
-- Fix every `should_fix` unless you disagree for a stated reason: say which ones you rejected, and why, in a warning.
+**Two models share this work.** You start as the planner (research, script, visual plan), on a strong model. When both first-pass reports exist and `validate` is clean, the planning part is over: raise the handoff and end your turn, nothing else:
+`status --await handoff --question "Planning done; analyst reports are in review/." --review review/research.json --review review/qa.json`
+(in `checkpoints` mode, raise `cp_script` as above instead: its approval is the handoff). The session is then resumed by the implementer, a cheaper model. If you are the implementer (your resume message starts with "HANDOFF"), do not redo any planning: you carry out the analysts' fixes, then everything after them.
+
+Then, as the implementer, read both reports:
+- Fix every `must_fix`, exactly as its `fix` says. Edit the existing files in place; do not rewrite a script or plan from scratch.
+- Fix every `should_fix` unless the fix would change the story, the sources or the structure: then leave it and name it, with the reason, in a warning.
 - Take the suggestions that are cheap and clearly better.
 
 Run `validate` again, then check the fixes with `python3 -m infogen analyst research --verify` and `python3 -m infogen analyst qa --verify`. These run in the background the same way (wait for `review/research_verify.json` and `review/qa_verify.json`), write `review/<role>_verify.md` and record nothing.
 
-Report the result as a warning, for example "analysts: research 2 must-fix and 3 should-fix, qa 1 must-fix and 4 should-fix; all must-fix resolved; 2 should-fix rejected: ...". The analysts' new guidelines are added to the rubrics automatically, so the next run is checked against them.
+If the verify pass still lists a `must_fix`, make one more round of fixes for those alone, verify again, and if one is still open say so in a warning (do not loop further). Report the result as a warning, for example "analysts: research 2 must-fix and 3 should-fix, qa 1 must-fix and 4 should-fix; all must-fix resolved; 2 should-fix rejected: ...". The analysts' new guidelines are added to the rubrics automatically, so the next run is checked against them.
 
 **Assets.**
 1. Write `assets.json` with the music: `bgm_long` (120 s) and one track per Short (`bgm_<short id>`, 50 s). Hero shots belong in the visual plan, not in `assets.json`. Run `queue assets.json`.

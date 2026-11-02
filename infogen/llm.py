@@ -33,6 +33,7 @@ COMMON = ["--exclude-dynamic-system-prompt-sections"]   # cwd, env and git statu
 PRICES = {"claude-fable-5-1": (10, 50, 0.25), "claude-fable-5": (10, 50, 0.25), "claude-opus-5-5": (4, 20, 0.20), "claude-opus-5": (5, 25, 0.50),
           "claude-opus-4-8": (5, 25, 0.50), "claude-sonnet-5-5": (2, 10, 0.10), "claude-sonnet-5": (2, 10, 0.20), "claude-sonnet-4-6": (3, 15, 0.30),
           "claude-haiku-5-5": (0.10, 0.50, 0.01), "claude-haiku-4-5": (1, 5, 0.10)}
+LAST = [None]   # the record log_call wrote last (harness.py reads the cost of the call it just made)
 KEYS = ("input", "output", "cache_read", "cache_write_5m", "cache_write_1h")
 
 def max_job_usd(): return float(os.environ.get("INFOGEN_MAX_LLM_USD", "15") or 0)
@@ -57,6 +58,7 @@ def log_call(step, model, res, cwd="."):
            "usd": res["total_cost_usd"] if isinstance(res.get("total_cost_usd"), (int, float)) else round(usd(model, t), 4),
            "turns": res.get("num_turns"), "subtype": res.get("subtype")}
     with open(os.path.join(cwd, CALLS), "a") as f: f.write(json.dumps(rec) + "\n")
+    LAST[0] = rec
     return rec
 
 def run(text, model, step, tools="", max_turns=40, max_usd=None, timeout=1800, effort=None):

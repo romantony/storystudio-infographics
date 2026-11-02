@@ -51,11 +51,19 @@ def prompt(s, brief):
     doc = open(os.path.join(APP, "prompts", "scene3d.md")).read()
     return doc + "\n\n## This scene\n\nNarration:\n" + (s.get("narration") or "(none)") + "\n\nScene JSON:\n" + json.dumps(brief, indent=1) + "\n"
 
-def ask(text, model):
+def ask(text, model, s=None):
+    """The planner's reply, through the harness: replayed if this exact scene was already planned, checked (parseable, merges into a
+    valid scene) and repaired with the exact problem lines before the plan is applied."""
+    from . import harness
     cmd = os.environ.get("INFOGEN_SCENE3D_CMD")
-    if cmd: return subprocess.run(cmd, shell=True, input=text, capture_output=True, text=True, timeout=900).stdout
-    from infogen import llm
-    try: return llm.run(text, model, "scene3d", tools="", max_turns=2, max_usd=float(os.environ.get("INFOGEN_SCENE3D_MAX_USD", "2")), timeout=900)
+    stub = (lambda t, m: subprocess.run(cmd, shell=True, input=t, capture_output=True, text=True, timeout=900).stdout) if cmd else None
+    def plan_ok(reply):
+        V = harness.Violation; plan = parse(reply)
+        if not plan: return [V("scene3d.json", "reply", "The reply is not one JSON object. Reply with the JSON object only.")]
+        if s is None: return []
+        return [V("scene3d.spec", f"scene {s.get('n')}", e) for e in check(merge(s, plan)[0])] + [V("scene3d.list", f"scene {s.get('n')}", n) for n in merge(s, plan)[1]]
+    try: return harness.call_checked("scene3d", text, model, checks=[plan_ok], tools="", max_turns=2, max_usd=float(os.environ.get("INFOGEN_SCENE3D_MAX_USD", "2")),
+                                     timeout=900, version=1, ask=stub).reply
     except RuntimeError as e: sys.exit(str(e))
 
 def parse(reply):
@@ -91,7 +99,7 @@ def main(cmd, argv):
     if not s: sys.exit(f"no scene {n}")
     if s.get("type") not in TYPES3D: sys.exit(f"scene {n} is {s.get('type')!r}, not one of {sorted(TYPES3D)}")
     brief = {k: v for k, v in s.items() if k not in ("narration",)}
-    plan = parse(ask(prompt(s, brief), model))
+    plan = parse(ask(prompt(s, brief), model, s))
     if not plan: sys.exit("the planner returned no JSON")
     new, notes = merge(s, plan); err = check(new)
     if err: sys.exit("planner output rejected: " + "; ".join(err))

@@ -93,6 +93,7 @@ class Req(BaseModel):
     kind: Literal["video", "series_plan"] = "video"; series_plan: SeriesPlan = SeriesPlan(); thumbnail: Thumbnail = Thumbnail()
     series: Series = Series(); long: Long = Long(); shorts: Shorts = Shorts(); visuals: Visuals = Visuals()
     review_mode: Literal["checkpoints", "auto"] = "checkpoints"; model: str = "claude-sonnet-5-5"
+    implement_model: Optional[str] = None   # model for the work after the script checkpoint is approved; None = INFOGEN_IMPL_MODEL, "" = same as `model`
     limits: Limits = Limits(); output: Output = Output(); callback: Callback
     @model_validator(mode="after")
     def frame_budget(self):
@@ -170,6 +171,21 @@ threading.Thread(target=hook_worker, daemon=True).start()
 
 # ---------- runner ----------
 PROCS = {}
+IMPL_MODEL = os.environ.get("INFOGEN_IMPL_MODEL", "")   # "" = the same model as the planner; claude-haiku-5-5 is opt-in
+def session_model(j, req, resume):
+    """Research, the script and the visual plan (and any revision of them) run on req.model (Sonnet or Opus). Once the reviewer approves
+    cp_script, the session is resumed on the implementation model: queueing assets, narration, build, thumbnails, metadata. A `revise`
+    overwrites response_cp_script.json, which puts the session back on the planning model until the next approval."""
+    impl = req["implement_model"] if req.get("implement_model") is not None else IMPL_MODEL
+    if impl and impl != req["model"]:
+        try:
+            if any(jread(j, f"response_{cp}.json", {}).get("action") == "approve" for cp in ("cp_script", "handoff")): return impl
+        except Exception: pass
+    return req["model"]
+HANDOFF_TEXT = ("HANDOFF: the planner has finished and this is a NEW session with an empty context (the planner's history is not carried over: it was "
+                "the main token cost). All state is in the files of the current folder: request.json, status.json (stage, outputs, costs), style.json, "
+                "research/, script/, plan/, review/. Read only what each step needs, not everything. Read review/research.json and review/qa.json, apply their fixes as the prompt says, "
+                "run validate, run the analysts with --verify, then continue with the next stage.")
 def spawn(j, text, resume=False):
     job = jread(j, "job.json"); req = job["request"]; log = open(os.path.join(jdir(j), "runner.jsonl"), "a")
     env = dict(os.environ, INFOGEN_JOB_ID=j, INFOGEN_REQUEST_ID=req["request_id"], PYTHONPATH=os.environ.get("INFOGEN_APP", "/app") + ":" + os.environ.get("PYTHONPATH", ""))
@@ -179,7 +195,7 @@ def spawn(j, text, resume=False):
     if RUNNER == "mock":
         cmd = [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "mock_runner.py"), "resume" if resume else "start", text]
     else:
-        cmd = (["claude", "-p", text, "--model", req["model"], "--output-format", "stream-json", "--verbose", "--max-turns", str(req["limits"]["max_llm_turns"]),
+        cmd = (["claude", "-p", text, "--model", session_model(j, req, resume), "--output-format", "stream-json", "--verbose", "--max-turns", str(req["limits"]["max_llm_turns"]),
                 "--tools", llm.PRODUCER_TOOLS] + llm.COMMON + shlex.split(CLAUDE_FLAGS))
         sid = jread(j, "state.json", {}).get("session_id")
         if resume and sid: cmd += ["--resume", sid]
@@ -189,12 +205,15 @@ def spawn(j, text, resume=False):
         st = jread(j, "state.json", {}); st["state"] = "running"; st["pid"] = p.pid; jwrite(j, "state.json", st)
     return p
 def session_id(j):
+    """The latest session of the job (the implementer after a handoff), for --resume at a later checkpoint."""
+    sid = None
     try:
         for line in open(os.path.join(jdir(j), "runner.jsonl")):
             if '"session_id"' in line:
                 m = re.search(r'"session_id"\s*:\s*"([^"]+)"', line)
-                if m: return m.group(1)
+                if m: sid = m.group(1)
     except Exception: pass
+    return sid
 def finish(j, state, error=None):
     with LOCK:
         st = jread(j, "state.json", {}); st["state"] = state; st["error"] = error; st["finished_at"] = S.now(); jwrite(j, "state.json", st)
@@ -233,6 +252,11 @@ def watch(j):
         if sid: st["session_id"] = sid; jwrite(j, "state.json", st)
     a = S.read(sp)
     if a.get("state") == "succeeded": finish(j, "succeeded")
+    elif a.get("state") == "awaiting_input" and (a.get("awaiting") or {}).get("checkpoint_id") == "handoff":
+        # Internal checkpoint: the planner is done and the analysts have reported. No reviewer; resume at once on the implementation model.
+        jwrite(j, "response_handoff.json", {"checkpoint_id": "handoff", "action": "approve", "instructions": ""})
+        S.update(sp, state="running", message="Planning done; the implementer applies the analysts' fixes and builds.")
+        spawn(j, start_prompt(jread(j, "job.json")["request"]) + "\n\n" + HANDOFF_TEXT); return watch(j)   # fresh session, not --resume
     elif a.get("state") == "awaiting_input" and a.get("awaiting"):
         with LOCK:
             st = jread(j, "state.json", {}); st["state"] = "awaiting_input"; jwrite(j, "state.json", st)

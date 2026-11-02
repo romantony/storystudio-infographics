@@ -117,17 +117,44 @@ def prompt(role, kind, rubric, files, verify):
             + f"\n\n## This review\n\nRequest kind: {kind}. Rubric: {rubric['title']} (version {rubric['version']}).\n\nCriteria:\n{lines}\n\n"
             f"Files to review, in the current folder (read every one of them in full):\n" + "\n".join(f"- {f}" for f in files) + previous)
 
-def ask(text, role, model):
-    """The analyst's reply text: a fresh Claude session with read-only tools."""
+def review_checks(rubric):
+    """Code checks on an analyst's reply (infogen/harness.py repairs what fails): a parseable report, every active criterion scored, and
+    every finding complete. The model reports; code decides whether the report is usable."""
+    from .harness import Violation
+    ids = [c["id"] for c in rubric["criteria"] if c["status"] == "active"]
+    def report(reply):
+        res = parse(reply)
+        if res is None: return [Violation("review.json", "reply", "The reply is not one JSON object. Reply with the JSON object only.")]
+        v = []
+        if not str(res.get("summary", "")).strip(): v.append(Violation("review.summary", "summary", "The summary is empty."))
+        scored = {x.get("id"): x.get("result") for x in res.get("scores", []) if isinstance(x, dict)}
+        missing = [i for i in ids if i not in scored]
+        if missing: v.append(Violation("review.scores_missing", ",".join(missing), "These criteria have no score. Score every criterion: pass, fail or na."))
+        bad = [i for i, r in scored.items() if r not in ("pass", "fail", "na")]
+        if bad: v.append(Violation("review.score_value", ",".join(map(str, bad)), "A score must be pass, fail or na."))
+        for n, f in enumerate(res.get("findings", []), 1):
+            if not isinstance(f, dict) or f.get("severity") not in SEVERITIES: v.append(Violation("review.severity", f"findings[{n}]", f"severity must be one of {', '.join(SEVERITIES)}.")); continue
+            for k in ("where", "issue", "fix"):
+                if not str(f.get(k, "")).strip(): v.append(Violation("review.finding_field", f"findings[{n}].{k}", f"A {f['severity']} finding needs a concrete {k}."))
+        return v
+    return [report]
+
+def ask(text, role, model, rubric=None, files=()):
+    """The analyst's reply: a fresh Claude session with read-only tools, through the harness (replayed if this exact review was already
+    paid for, checked, and repaired when the report is incomplete). Returns the reply text; remaining violations go to harness.jsonl."""
+    from . import harness
     cmd = os.environ.get("INFOGEN_ANALYST_CMD")
-    if cmd: return subprocess.run(cmd, shell=True, input=text, capture_output=True, text=True, timeout=1800).stdout
-    from infogen import llm
+    stub = (lambda t, m: subprocess.run(cmd, shell=True, input=t, capture_output=True, text=True, timeout=1800).stdout) if cmd else None
     tools = "Read Glob Grep" + (" WebSearch WebFetch" if role == "research" else "")
     # The Thumbnail Analyst mostly scores pictures: medium effort. The Quality and Research Analysts check facts on a finance
     # channel and keep the model's default until two of their reviews have been compared at medium.
     effort = os.environ.get("INFOGEN_THUMBNAIL_ANALYST_EFFORT", "medium") if role == "thumbnail" else None
-    try: return llm.run(text, model, f"analyst/{role}", tools=tools, max_turns=40, max_usd=float(os.environ.get("INFOGEN_ANALYST_MAX_USD", "2")), effort=effort or None)
+    try:
+        r = harness.call_checked(f"analyst/{role}", text, model, checks=review_checks(rubric) if rubric else (), tools=tools, max_turns=40,
+                                 max_usd=float(os.environ.get("INFOGEN_ANALYST_MAX_USD", "2")), effort=effort or None, version=1,
+                                 extra={"files": harness.file_hash(files)}, ask=stub)
     except RuntimeError as e: sys.exit(f"{ROLES.get(role, role)}: {e}")
+    return r.reply
 
 def parse(reply):
     """The JSON object in the reply (bare, or in a ```json fence)."""
@@ -164,7 +191,7 @@ def main(cmd, argv):
     kind = req.get("kind", "video"); name = rubric_name(role, kind); rubric = load(name)
     files = gather(role, kind)
     if not files: sys.exit(f"{ROLES[role]}: nothing to review yet")
-    reply = ask(prompt(role, kind, rubric, files, verify), role, req.get("model", "claude-sonnet-5-5"))
+    reply = ask(prompt(role, kind, rubric, files, verify), role, req.get("model", "claude-sonnet-5-5"), rubric, files)
     res = parse(reply)
     if res is None: sys.exit(f"{ROLES[role]}: the reply was not a JSON report:\n{reply[-1500:]}")
     res = {"role": role, "rubric": name, "rubric_version": rubric["version"], "verify": verify, **res}

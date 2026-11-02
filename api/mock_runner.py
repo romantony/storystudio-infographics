@@ -46,13 +46,14 @@ if req.get("kind") == "series_plan":   # plan a series: a valid series.json, cp_
         go([("setup", "Folders created."), ("script", "Series planned.")]); plan()
         if chk: S.update(await_id="cp_series", question="Approve the series plan, or send changes?", review=["series/series.md", "series/series.json"]); sys.exit(0)
     deliver(); sys.exit(0)
+if mode == "start" and os.path.exists("response_handoff.json") and not chk: go(rest); final(); sys.exit(0)   # the implementer: a fresh session after the handoff
 if mode == "start":
     go(first)
     if "FAIL" in req["topic"]: S.update(state="failed", error_code="generation_failed", message="mock failure"); sys.exit(0)
     if chk: S.update(await_id="cp_script", question="Approve the scripts, or send changes?", review=["request.json"]); sys.exit(0)
-    go(rest)
-    final()
+    S.update(await_id="handoff", question="Planning done.", review=["request.json"]); sys.exit(0)   # auto mode: the server resumes at once
 else:
+    if os.path.exists("response_handoff.json") and not chk: go(rest); final(); sys.exit(0)
     st = S.read(); cp = (json.load(open("response_cp_script.json")) if os.path.exists("response_cp_script.json") else {})
     if os.path.exists("response_cp_final.json"): final(); sys.exit(0)
     if cp.get("action") == "revise" and not os.path.exists(".revised"):

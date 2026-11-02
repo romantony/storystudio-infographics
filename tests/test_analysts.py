@@ -17,7 +17,7 @@ from infogen import analysts as A
 # The stub analyst saves the prompt it was given and replies with the JSON in $REPLY (fenced, as a model often does).
 stub = os.path.join(tmp, "stub.py")
 open(stub, "w").write("import os, sys\nopen(os.environ['PROMPT_OUT'], 'w').write(sys.stdin.read())\nprint('Here is my review:\\n```json\\n' + open(os.environ['REPLY']).read() + '\\n```')\n")
-env = {**os.environ, "PYTHONPATH": ROOT, "INFOGEN_ANALYST_CMD": f"{sys.executable} {stub}", "PROMPT_OUT": os.path.join(tmp, "prompt.txt"), "REPLY": os.path.join(tmp, "reply.json")}
+env = {**os.environ, "PYTHONPATH": ROOT, "INFOGEN_LLM_CACHE": "off", "INFOGEN_ANALYST_CMD": f"{sys.executable} {stub}", "PROMPT_OUT": os.path.join(tmp, "prompt.txt"), "REPLY": os.path.join(tmp, "reply.json")}
 def analyst(*args, reply):
     json.dump(reply, open(env["REPLY"], "w"))
     return subprocess.run([sys.executable, "-m", "infogen", "analyst", *args], cwd=run, capture_output=True, text=True, env=env)
@@ -60,7 +60,7 @@ check("series plan: both analysts use the series rubric", r.returncode == 0 and 
 
 json.dump({"request_id": "job-2", "kind": "video"}, open(f"{run}/request.json", "w"))
 open(env["REPLY"], "w").write("I could not finish.")
-bad = subprocess.run([sys.executable, "-m", "infogen", "analyst", "qa"], cwd=run, capture_output=True, text=True, env={**env, "INFOGEN_ANALYST_CMD": "echo 'no json here'"})
+bad = subprocess.run([sys.executable, "-m", "infogen", "analyst", "qa"], cwd=run, capture_output=True, text=True, env={**env, "INFOGEN_LLM_CACHE": "off", "INFOGEN_ANALYST_CMD": "echo 'no json here'"})
 check("a reply with no JSON fails clearly", bad.returncode != 0 and "not a JSON report" in bad.stderr, bad.stderr[-300:])
 
 # parallel jobs: no lost update
