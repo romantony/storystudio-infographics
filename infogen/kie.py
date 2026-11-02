@@ -1,7 +1,7 @@
 """KIE (api.kie.ai): images with Nano Banana 2.1 (text-to-image and editing with reference images) and music with Suno.
 Create a task, poll it, download the result. Key: KIE_API_KEY.
 Reference images must be public URLs (up to 10); base64 images are uploaded to the output bucket first (public_url).
-Env: KIE_BASE (https://api.kie.ai), KIE_MODEL (nano-banana-2-1), KIE_IMAGE_RESOLUTION (2K) for frames and references,
+Env: KIE_BASE (https://api.kie.ai), KIE_MODEL (nano-banana-2-1), KIE_IMAGE_RESOLUTION (1K) for frames and references,
      KIE_MUSIC_MODEL (V6). Every finished task's credits are appended to build/kie_costs.jsonl (1 credit = $0.005)."""
 import base64, hashlib, json, os, time, urllib.error, urllib.parse, urllib.request
 from .common import key
@@ -11,7 +11,7 @@ MODEL = os.environ.get("KIE_MODEL", "nano-banana-2-1")
 ASPECTS = ("1:1", "2:3", "3:2", "1:4", "4:1", "3:4", "4:3", "4:5", "5:4", "1:8", "8:1", "9:16", "16:9", "21:9", "auto")
 RETRY = (429, 500, 502, 503, 504)
 MUSIC_MODEL = os.environ.get("KIE_MUSIC_MODEL", "V6")
-IMAGE_RES = os.environ.get("KIE_IMAGE_RESOLUTION", "2K")
+IMAGE_RES = os.environ.get("KIE_IMAGE_RESOLUTION", "1K")
 COSTS = "build/kie_costs.jsonl"
 USD_PER_CREDIT = 0.005
 
