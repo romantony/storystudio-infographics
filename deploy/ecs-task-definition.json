@@ -45,6 +45,22 @@
           "value": "claude-sonnet-5-5"
         },
         {
+          "name": "INFOGEN_LLM_CACHE",
+          "value": "readwrite"
+        },
+        {
+          "name": "INFOGEN_LLM_CACHE_DIR",
+          "value": "/data/runs/_llmcache"
+        },
+        {
+          "name": "INFOGEN_REPAIR_ATTEMPTS",
+          "value": "1"
+        },
+        {
+          "name": "INFOGEN_IMPL_MODEL",
+          "value": ""
+        },
+        {
           "name": "INFOGEN_OUTPUT_BUCKET",
           "value": "storystudio-unified-storage-prod"
         },
